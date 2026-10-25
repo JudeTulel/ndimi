@@ -4,18 +4,29 @@
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web"
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "lint": "expo lint"
   },
   "dependencies": {
+    "@qvac/fabric-android-arm64": "0.22.0",
+    "@qvac/fabric-ios": "0.22.0",
+    "@qvac/sdk": "^0.22.0",
+    "bare-rpc": "^1.3.8",
     "expo": "~54.0.36",
+    "expo-build-properties": "~1.0.10",
+    "expo-device": "~8.0.10",
+    "expo-file-system": "~19.0.24",
     "expo-status-bar": "~3.0.9",
     "react": "19.1.0",
-    "react-native": "0.81.5"
+    "react-native": "0.81.5",
+    "react-native-bare-kit": "^0.16.0"
   },
   "devDependencies": {
     "@types/react": "~19.1.0",
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~10.0.0",
     "typescript": "~5.9.2"
   },
   "private": true
