@@ -4,8 +4,8 @@
  * Plugins: 3
  *
 *   - @qvac/sdk/llamacpp-completion/plugin
-*   - @qvac/sdk/ggml-whisper/plugin
-*   - @qvac/sdk/gguf-translation/plugin
+*   - @qvac/sdk/whispercpp-transcription/plugin
+*   - @qvac/sdk/nmtcpp-translation/plugin
  */
 
 import { initializeWorker, ensureRPCSetup } from "@qvac/sdk/worker-lifecycle";
@@ -13,8 +13,8 @@ import { registerPlugin } from "@qvac/sdk/plugins";
 import { getServerLogger } from "@qvac/sdk/logging";
 
 import { llmPlugin } from "@qvac/sdk/llamacpp-completion/plugin";
-import customPlugin0 from "@qvac/sdk/ggml-whisper/plugin";
-import customPlugin1 from "@qvac/sdk/gguf-translation/plugin";
+import { whisperPlugin } from "@qvac/sdk/whispercpp-transcription/plugin";
+import { nmtPlugin } from "@qvac/sdk/nmtcpp-translation/plugin";
 
 const { hasRPCConfig } = initializeWorker();
 
@@ -23,8 +23,8 @@ logger.info("🐻 QVAC Worker (custom bundle)");
 logger.info("📦 Plugins: 3");
 
 registerPlugin(llmPlugin);
-registerPlugin(customPlugin0);
-registerPlugin(customPlugin1);
+registerPlugin(whisperPlugin);
+registerPlugin(nmtPlugin);
 
 // Auto-setup RPC if config present
 if (hasRPCConfig) {

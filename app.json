@@ -23,18 +23,36 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.ndimi.swahili",
-      "minSdkVersion": 29
+      "package": "com.ndimi.swahili"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      ["expo-build-properties", { "android": { "minSdkVersion": 29, "ndkVersion": "27.0.12077973" } }],
-      ["expo-router"],
-      ["expo-sqlite"],
-      ["expo-audio"],
-      ["@qvac/sdk/expo-plugin", { "installMissingPrebuilds": true }]
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 29
+          }
+        }
+      ],
+      [
+        "expo-router"
+      ],
+      [
+        "expo-sqlite"
+      ],
+      [
+        "expo-audio"
+      ],
+      [
+        "@qvac/sdk/expo-plugin",
+        {
+          "installMissingPrebuilds": true
+        }
+      ],
+      "expo-asset"
     ]
   }
 }

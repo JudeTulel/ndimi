@@ -1,22 +1,24 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { Audio } from 'expo-av';
-import * as SQLite from 'expo-sqlite';
+import { getDatabase } from '../core/db/database';
 
 export default function RootLayout() {
   const router = useRouter();
+  const [booting, setBooting] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
+        await getDatabase();
         await Audio.requestPermissionsAsync();
-        const db = await SQLite.openDatabaseAsync('ndimi.db');
-        await db.execAsync('PRAGMA journal_mode = WAL');
         if (!cancelled) router.replace('/onboarding/permissions');
       } catch (e) {
         console.error('Bootstrap permission error', e);
+      } finally {
+        if (!cancelled) setBooting(false);
       }
     })();
 
@@ -26,8 +28,23 @@ export default function RootLayout() {
   }, [router]);
 
   return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-      <Text>Starting Ndimi Swahili...</Text>
-    </View>
+    <>
+      <Stack screenOptions={{ headerShown: false }} />
+      {booting && (
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: '#fff',
+          }}>
+          <Text>Starting Ndimi Swahili...</Text>
+        </View>
+      )}
+    </>
   );
 }
