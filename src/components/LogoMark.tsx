@@ -1,60 +1,28 @@
-import { StyleSheet, View } from 'react-native';
-import { colors } from '../theme/tokens';
+import { Image, StyleSheet, View } from 'react-native';
+import { colors, radius } from '../theme/tokens';
+
+const LOGO = require('../../assets/logo.jpg');
 
 /**
- * The Ndimi mark redrawn in brand colours only: a flat-topped half-disc, red
- * over dark, with the overlap band in dark. Drawn with plain Views so no asset
- * colours leak into the palette.
+ * The Ndimi mark from `assets/logo.jpg`, rendered as an image so the real
+ * artwork stays the source of truth. Only the surrounding frame uses tokens.
  */
-export function LogoMark({ width = 176 }: { width?: number }) {
-  const height = width * 0.62;
-  const red = height * 0.46;
-  const overlap = height * 0.1;
-
+export function LogoMark({ diameter = 168 }: { diameter?: number }) {
   return (
-    <View style={[styles.stage, { width, height: height + 8 }]}>
-      <View
-        style={[
-          styles.disc,
-          {
-            width,
-            height,
-            borderBottomLeftRadius: width / 2,
-            borderBottomRightRadius: width / 2,
-            backgroundColor: colors.dark,
-          },
-        ]}
-      />
-      <View
-        style={[
-          styles.overlay,
-          {
-            width,
-            height: red,
-            borderBottomLeftRadius: width / 2,
-            borderBottomRightRadius: width / 2,
-            backgroundColor: colors.red,
-          },
-        ]}
-      />
-      <View
-        style={[
-          styles.overlay,
-          {
-            width,
-            height: overlap,
-            marginTop: red - overlap / 2,
-            backgroundColor: colors.dark,
-            opacity: 0.9,
-          },
-        ]}
-      />
+    <View
+      style={[
+        styles.frame,
+        { width: diameter, height: diameter, borderRadius: radius.card },
+      ]}>
+      <Image source={LOGO} style={styles.image} resizeMode="cover" />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  stage: { justifyContent: 'flex-start' },
-  disc: { position: 'absolute', top: 0, left: 0 },
-  overlay: { position: 'absolute', top: 0, left: 0 },
+  frame: {
+    overflow: 'hidden',
+    backgroundColor: colors.dark,
+  },
+  image: { width: '100%', height: '100%' },
 });
