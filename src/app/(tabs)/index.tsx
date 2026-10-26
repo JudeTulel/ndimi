@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { GlassCard } from '../../components/GlassCard';
@@ -8,6 +8,7 @@ import { colors, radius, spacing, type } from '../../theme/tokens';
 import { CATALOG } from '../../features/models/catalog';
 import { subscribe, type ModelStatusMap } from '../../features/models/modelStore';
 import { listHistory, type HistoryEntry } from '../../features/history/historyStore';
+import { getDirection, type Direction } from '../../core/db/settings';
 
 const TILES = [
   { icon: 'camera-outline' as const, title: 'Camera', caption: 'Snap your text.', route: '/camera' },
@@ -18,17 +19,30 @@ const TILES = [
 
 export default function Home() {
   const router = useRouter();
+  const navigation = useNavigation();
   const [status, setStatus] = useState<ModelStatusMap>({});
   const [recent, setRecent] = useState<HistoryEntry[]>([]);
+  const [direction, setDirection] = useState<Direction>('en-sw');
 
   useEffect(() => subscribe(setStatus), []);
   useEffect(() => {
-    void listHistory(2).then(setRecent);
+    void getDirection().then(setDirection);
   }, []);
 
-  const modelsReady = CATALOG.filter((m) => m.task === 'translation' || m.task === 'asr').every(
-    (m) => status[m.id]?.status === 'installed'
-  );
+  // Refresh the two most recent rows on focus: the tab stays mounted while the
+  // user translates elsewhere, so a mount-only load would show stale history.
+  useEffect(() => {
+    const reload = () => void listHistory({ limit: 2 }).then(setRecent);
+    reload();
+    const unsubscribe = navigation.addListener('focus', reload);
+    return unsubscribe;
+  }, [navigation]);
+
+  // Ready means at least one model per required task, not every catalog entry.
+  const hasTask = (task: 'asr' | 'translation') =>
+    CATALOG.some((m) => m.task === task && status[m.id]?.status === 'installed');
+  const modelsReady = hasTask('asr') && hasTask('translation');
+  const directionLabel = direction === 'sw-en' ? 'Swahili → English' : 'English → Swahili';
 
   return (
     <Screen footerGap={spacing.sm}>
@@ -45,14 +59,22 @@ export default function Home() {
       <GlassCard onPress={() => router.push('/translate')} style={styles.prompt}>
         <Text style={styles.promptText}>Write text to translate…</Text>
         <View style={styles.promptRow}>
-          <Text style={styles.pair}>English → Swahili</Text>
+          <Text style={styles.pair}>{directionLabel}</Text>
           <View style={styles.go}>
             <Ionicons name="arrow-forward" size={13} color="#FFFFFF" />
           </View>
         </View>
       </GlassCard>
 
-      <GlassCard onPress={() => router.push('/(tabs)/chat')} style={styles.assistant}>
+      <GlassCard
+        onPress={() =>
+          router.push(
+            modelsReady
+              ? '/(tabs)/chat'
+              : '/settings/models'
+          )
+        }
+        style={styles.assistant}>
         <View style={styles.assistantIcon}>
           <Ionicons name={modelsReady ? 'sparkles' : 'cloud-download-outline'} size={18} color={colors.red} />
         </View>
@@ -61,7 +83,9 @@ export default function Home() {
             {modelsReady ? 'Help Assistant AI' : 'Finish model setup'}
           </Text>
           <Text style={styles.assistantCaption}>
-            {modelsReady ? 'Get help instantly.' : 'Install models to go offline.'}
+            {modelsReady
+              ? 'Get help instantly.'
+              : `${hasTask('translation') ? 'Translation' : 'Speech'} model still missing.`}
           </Text>
         </View>
         <Ionicons name="arrow-up-outline" size={16} color={colors.text} style={styles.diag} />

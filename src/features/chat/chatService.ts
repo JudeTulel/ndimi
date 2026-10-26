@@ -1,15 +1,18 @@
-import { completion, loadModel, unloadModel } from '@qvac/sdk';
+import { cancel, completion, loadModel, unloadModel } from '@qvac/sdk';
+import { toRuntimePath } from '../../core/fs/paths';
 import { CATALOG, type CatalogModel } from '../models/catalog';
 import { getSnapshot } from '../models/modelStore';
 
 export type ChatMessage = { role: 'user' | 'assistant'; content: string };
 
-let loaded: { modelId: string; source: string } | null = null;
+type Loaded = { modelId: string; catalogId: string; installedAt: string };
+
+let loaded: Loaded | null = null;
 
 /**
  * Loads the installed chat model into the QVAC runtime and returns its runtime
- * id. Kept warm across turns; unloaded explicitly when the model is removed or
- * swapped.
+ * id. Kept warm across turns; unloaded explicitly when the model is removed or a
+ * different one is installed.
  */
 export async function ensureChatModel(): Promise<string> {
   const model = CATALOG.find(
@@ -19,9 +22,10 @@ export async function ensureChatModel(): Promise<string> {
 
   const state = getSnapshot()[model.id];
   if (state?.status !== 'installed') throw new Error('Chat model is not installed.');
-  const source = state.localPath;
 
-  if (loaded && loaded.source === source) return loaded.modelId;
+  if (loaded && loaded.catalogId === model.id && loaded.installedAt === state.installedAt) {
+    return loaded.modelId;
+  }
 
   if (loaded) {
     await unloadModel({ modelId: loaded.modelId }).catch(() => {});
@@ -29,11 +33,11 @@ export async function ensureChatModel(): Promise<string> {
   }
 
   const modelId = await loadModel({
-    modelSrc: source,
+    modelSrc: toRuntimePath(state.localPath),
     modelType: 'llamacpp-completion',
     modelConfig: { ctx_size: 2048 },
   });
-  loaded = { modelId, source };
+  loaded = { modelId, catalogId: model.id, installedAt: state.installedAt };
   return modelId;
 }
 
@@ -64,7 +68,11 @@ export async function streamChat(
 
   let full = '';
   for await (const event of run.events) {
-    if (signal?.cancelled) break;
+    if (signal?.cancelled) {
+      // Targeted cancel, so a peer run on the same model keeps decoding.
+      await cancel({ requestId: run.requestId }).catch(() => {});
+      break;
+    }
     if (event.type === 'contentDelta') {
       full += event.text;
       onDelta(full);

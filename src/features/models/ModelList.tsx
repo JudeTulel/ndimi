@@ -16,6 +16,7 @@ import {
 const TASKS: { key: ModelTask; label: string; caption: string }[] = [
   { key: 'asr', label: 'Speech recognition', caption: 'Required for voice translation' },
   { key: 'translation', label: 'Translation', caption: 'Required for all translation' },
+  { key: 'ocr', label: 'Text scanning', caption: 'Required for camera translation' },
   { key: 'chat', label: 'General chat', caption: 'Optional — conversational assistant' },
 ];
 
@@ -87,15 +88,27 @@ function ModelCard({
       <Text style={styles.cardBody}>{model.summary}</Text>
 
       {state.status === 'downloading' ? (
-        <DownloadProgress
-          bytesWritten={state.bytesWritten}
-          totalBytes={state.totalBytes}
-          progress={state.progress}
-        />
+        state.totalBytes > 0 ? (
+          <DownloadProgress
+            bytesWritten={state.bytesWritten}
+            totalBytes={state.totalBytes}
+            progress={state.progress}
+          />
+        ) : (
+          <Text style={styles.cardStatus}>Fetching from the QVAC registry…</Text>
+        )
       ) : null}
 
       {state.status === 'verifying' ? (
         <Text style={styles.cardStatus}>Verifying SHA-256…</Text>
+      ) : null}
+
+      {state.status === 'paused' ? (
+        <DownloadProgress
+          bytesWritten={state.bytesWritten}
+          totalBytes={state.totalBytes}
+          progress={state.totalBytes > 0 ? state.bytesWritten / state.totalBytes : 0}
+        />
       ) : null}
 
       {state.status === 'failed' ? <Text style={styles.cardError}>{state.message}</Text> : null}
@@ -131,6 +144,10 @@ function ModelAction({
   }
   if (state.status === 'verifying') {
     return <Text style={styles.cardStatus}>Verifying</Text>;
+  }
+  if (state.status === 'paused') {
+    // Paused keeps its bytes; Resume continues rather than restarting.
+    return <PrimaryButton label="Resume" compact onPress={() => startDownload(model)} />;
   }
   const label = state.status === 'failed' ? 'Retry' : 'Download';
   return (

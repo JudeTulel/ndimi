@@ -1,17 +1,35 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { Screen } from '../../components/Screen';
 import { colors, radius, spacing, type } from '../../theme/tokens';
 import { CATALOG, formatBytes } from '../../features/models/catalog';
 import { subscribe, type ModelStatusMap } from '../../features/models/modelStore';
+import { clearHistory, listHistory } from '../../features/history/historyStore';
+import {
+  DIRECTIONS,
+  getDirection,
+  getOfflineMode,
+  setDirection,
+  setOfflineMode,
+  type Direction,
+} from '../../core/db/settings';
 
 export default function Profile() {
   const router = useRouter();
   const [status, setStatus] = useState<ModelStatusMap>({});
+  const [direction, setDirectionState] = useState<Direction>('en-sw');
+  const [offline, setOffline] = useState(false);
+  const [saved, setSaved] = useState<number | null>(null);
+  const [cleared, setCleared] = useState(false);
 
   useEffect(() => subscribe(setStatus), []);
+  useEffect(() => {
+    void getDirection().then(setDirectionState);
+    void getOfflineMode().then(setOffline);
+    void listHistory({ limit: 1000 }).then((rows) => setSaved(rows.length));
+  }, []);
 
   const counts = useMemo(() => {
     const values = CATALOG.map((model) => status[model.id]?.status ?? 'absent');
@@ -38,6 +56,22 @@ export default function Profile() {
         ? `${counts.installed} installed · ${formatBytes(bytes)}`
         : 'No models installed';
 
+  const chooseDirection = async (value: Direction) => {
+    setDirectionState(value);
+    await setDirection(value);
+  };
+
+  const toggleOffline = async (value: boolean) => {
+    setOffline(value);
+    await setOfflineMode(value);
+  };
+
+  const eraseHistory = async () => {
+    await clearHistory();
+    setSaved(0);
+    setCleared(true);
+  };
+
   return (
     <Screen>
       <Text style={styles.title}>Profile</Text>
@@ -50,6 +84,66 @@ export default function Profile() {
         ) : null}
       </View>
 
+      <Text style={styles.section}>Translation</Text>
+
+      <View style={styles.card}>
+        <Text style={styles.cardLabel}>DEFAULT DIRECTION</Text>
+        <View style={styles.segments}>
+          {DIRECTIONS.map((option) => {
+            const on = direction === option.value;
+            return (
+              <Pressable
+                key={option.value}
+                onPress={() => void chooseDirection(option.value)}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: on }}
+                style={[styles.segment, on && styles.segmentOn]}>
+                <Text style={[styles.segmentText, on && styles.segmentTextOn]}>{option.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+
+      <View style={styles.toggleRow}>
+        <View style={styles.rowIcon}>
+          <Ionicons name="airplane-outline" size={20} color={colors.red} />
+        </View>
+        <View style={styles.rowText}>
+          <Text style={styles.rowTitle}>Offline mode</Text>
+          <Text style={styles.rowCaption}>
+            Hides network-backed actions. Inference already runs on device.
+          </Text>
+        </View>
+        <Switch
+          value={offline}
+          onValueChange={(value) => void toggleOffline(value)}
+          trackColor={{ false: colors.border, true: colors.red }}
+          thumbColor="#FFFFFF"
+        />
+      </View>
+
+      <Text style={styles.section}>Data</Text>
+
+      <Pressable
+        style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+        onPress={() => void eraseHistory()}>
+        <View style={styles.rowIcon}>
+          <Ionicons name="trash-outline" size={20} color={colors.red} />
+        </View>
+        <View style={styles.rowText}>
+          <Text style={styles.rowTitle}>Clear history</Text>
+          <Text style={styles.rowCaption}>
+            {saved === null
+              ? 'Reading local history…'
+              : cleared && saved === 0
+                ? 'History is empty.'
+                : `${saved} saved translation${saved === 1 ? '' : 's'} on this phone.`}
+          </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={colors.secondaryText} />
+      </Pressable>
+
       <Text style={styles.section}>Settings</Text>
 
       <SettingRow
@@ -58,6 +152,10 @@ export default function Profile() {
         caption="Download, retry or remove translation and speech models"
         onPress={() => router.push('/settings/models')}
       />
+
+      <Text style={styles.footnote}>
+        Ndimi Swahili keeps audio, transcripts and translations on this device. Nothing is uploaded.
+      </Text>
     </Screen>
   );
 }
@@ -103,7 +201,30 @@ const styles = StyleSheet.create({
   cardValue: { ...type.cardTitle, color: colors.text },
   warn: { ...type.body, fontSize: 11, color: colors.danger },
   section: { ...type.label, color: colors.secondaryText, marginTop: spacing.sm },
+  segments: { flexDirection: 'row', gap: spacing.xs + 2, marginTop: spacing.xs },
+  segment: {
+    flex: 1,
+    alignItems: 'center',
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceRaised,
+    paddingVertical: spacing.sm,
+  },
+  segmentOn: { backgroundColor: colors.dark, borderColor: colors.dark },
+  segmentText: { ...type.label, fontSize: 10, color: colors.secondaryText },
+  segmentTextOn: { color: '#FFFFFF' },
   row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.input,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+  },
+  toggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
@@ -125,4 +246,5 @@ const styles = StyleSheet.create({
   rowText: { flex: 1, gap: 2 },
   rowTitle: { ...type.cardTitle, color: colors.text },
   rowCaption: { ...type.body, fontSize: 11, color: colors.secondaryText },
+  footnote: { ...type.body, fontSize: 11, color: colors.secondaryText, marginTop: spacing.sm },
 });

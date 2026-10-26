@@ -25,9 +25,16 @@ export interface IFileSystem {
   removeFile(path: string): Promise<void>;
 }
 
+export type InputType = 'text' | 'voice' | 'camera';
+
 export interface IHistoryRepository {
-  saveTranslation(result: TranslationResult, inputType: 'text' | 'voice', modelId?: string): Promise<void>;
-  listTranslations(query?: { sourceLanguage?: string; targetLanguage?: string; q?: string }): Promise<TranslationResult[]>;
+  saveTranslation(result: TranslationResult, inputType: InputType, modelId?: string): Promise<void>;
+  listTranslations(query?: {
+    sourceLanguage?: string;
+    targetLanguage?: string;
+    q?: string;
+    limit?: number;
+  }): Promise<TranslationResult[]>;
   deleteTranslation(id: string): Promise<void>;
   clear(): Promise<void>;
 }

@@ -1,4 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useRouter } from 'expo-router';
 import {
   getRecordingPermissionsAsync,
@@ -6,7 +8,7 @@ import {
   setAudioModeAsync,
 } from 'expo-audio';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import { CircleButton } from '../components/CircleButton';
 import { GlassCard } from '../components/GlassCard';
 import { PrimaryButton } from '../components/PrimaryButton';
@@ -16,23 +18,44 @@ import { colors, spacing, type } from '../theme/tokens';
 import { CATALOG } from '../features/models/catalog';
 import { subscribe, type ModelStatusMap } from '../features/models/modelStore';
 import { saveTranslation } from '../features/history/historyStore';
+import { useVoiceRecorder } from '../features/voice/useVoiceRecorder';
+import {
+  runVoiceTranslation,
+  type PipelineUpdate,
+  type VoiceSession,
+} from '../core/pipeline/voicePipeline';
+import type { TranslationLanguage } from '../features/translate/translationService';
+import { toRuntimePath } from '../core/fs/paths';
+import { getDirection } from '../core/db/settings';
 
-type Phase = 'idle' | 'listening' | 'processing' | 'result' | 'denied';
+type Phase = 'idle' | 'listening' | 'processing' | 'result' | 'denied' | 'error';
 
 export default function Voice() {
   const router = useRouter();
   const [status, setStatus] = useState<ModelStatusMap>({});
   const [phase, setPhase] = useState<Phase>('idle');
-  const [seconds, setSeconds] = useState(0);
-  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [stage, setStage] = useState<PipelineUpdate['stage'] | null>(null);
+  const [transcript, setTranscript] = useState('');
+  const [translation, setTranslation] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [from, setFrom] = useState<TranslationLanguage>('sw');
+  const session = useRef<VoiceSession>({ cancelled: false });
+  const recorder = useVoiceRecorder();
 
   useEffect(() => subscribe(setStatus), []);
-  useEffect(() => () => clear(), []);
 
-  const clear = () => {
-    if (timer.current) clearInterval(timer.current);
-    timer.current = null;
-  };
+  // Follow the Profile preference, defaulting to Swahili speech as the product
+  // intends (the user is usually the one being translated for).
+  useEffect(() => {
+    void getDirection().then((preference) => setFrom(preference === 'en-sw' ? 'en' : 'sw'));
+  }, []);
+
+  // `useVoiceRecorder` returns a fresh object each render, so capture the cancel
+  // function rather than the whole handle.
+  const cancelRecording = recorder.cancel;
+  useEffect(() => () => void cancelRecording(), [cancelRecording]);
+
+  const to: TranslationLanguage = from === 'en' ? 'sw' : 'en';
 
   const asr = useMemo(
     () => CATALOG.find((m) => m.task === 'asr' && status[m.id]?.status === 'installed'),
@@ -45,6 +68,11 @@ export default function Voice() {
   const ready = !!asr && !!nmt;
 
   const start = async () => {
+    setError(null);
+    setTranscript('');
+    setTranslation('');
+    setStage(null);
+
     const existing = await getRecordingPermissionsAsync();
     let granted = existing.granted;
     if (!granted) granted = (await requestRecordingPermissionsAsync()).granted;
@@ -52,37 +80,77 @@ export default function Voice() {
       setPhase('denied');
       return;
     }
-    await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
-    setPhase('listening');
-    setSeconds(0);
-    timer.current = setInterval(() => setSeconds((s) => s + 1), 1000);
+
+    try {
+      await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
+      await recorder.start();
+      session.current = { cancelled: false };
+      setPhase('listening');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not start the microphone.');
+      setPhase('error');
+    }
   };
 
   const confirm = async () => {
-    clear();
     setPhase('processing');
-    // Capture/ASR adapters land next; hold the two pipeline stages so the state
-    // machine and the History write are exercised end to end.
-    setTimeout(async () => {
+    let uri: string | null = null;
+    try {
+      uri = await recorder.stop();
+      const outcome = await runVoiceTranslation({ audioUri: uri, from, to }, (update) => {
+        if (update.stage === 'done') {
+          setTranscript(update.transcript);
+          setTranslation(update.translation);
+        } else {
+          setStage(update.stage);
+          if (update.partial) setTranslation(update.partial);
+        }
+      }, session.current);
+
+      if (!outcome) return;
+      setPhase('result');
       await saveTranslation(
         {
-          sourceText: 'Habari, unaitwa nani?',
-          translatedText: 'Hello, what is your name?',
-          sourceLanguage: 'sw',
-          targetLanguage: 'en',
+          sourceText: outcome.transcript,
+          translatedText: outcome.translation,
+          sourceLanguage: from,
+          targetLanguage: to,
         },
         'voice',
         nmt?.id
       );
-      setPhase('result');
-    }, 1000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not transcribe that recording.');
+      setPhase('error');
+    } finally {
+      // The transcript and translation are kept, the audio is not: the doc's
+      // retention policy is "delete temporary audio after processing".
+      if (uri) await FileSystem.deleteAsync(toRuntimePath(uri), { idempotent: true }).catch(() => {});
+    }
   };
 
-  const cancel = () => {
-    clear();
-    setSeconds(0);
+  const discard = async () => {
+    session.current.cancelled = true;
+    await recorder.cancel();
+    setTranscript('');
+    setTranslation('');
+    setStage(null);
+    setError(null);
     setPhase('idle');
   };
+
+  const swap = () => setFrom(to);
+
+  const statusLine =
+    phase === 'listening'
+      ? 'Listening…'
+      : stage === 'transcribing' || stage === 'translating'
+        ? stage === 'transcribing'
+          ? 'Transcribing on device…'
+          : 'Translating on device…'
+        : phase === 'result'
+          ? 'Translated'
+          : `${from === 'sw' ? 'Swahili' : 'English'} → ${to === 'sw' ? 'Swahili' : 'English'}`;
 
   return (
     <Screen fixed contentStyle={styles.content}>
@@ -96,15 +164,13 @@ export default function Voice() {
         </CircleButton>
       </View>
 
-      <Text style={styles.status}>
-        {phase === 'listening'
-          ? 'Listening…'
-          : phase === 'processing'
-            ? 'Transcribing and translating…'
-            : phase === 'result'
-              ? 'Translated'
-              : 'Swahili → English'}
-      </Text>
+      <Pressable onPress={swap} style={styles.pair} accessibilityRole="button">
+        <Text style={styles.pairText}>{from === 'sw' ? 'Swahili' : 'English'}</Text>
+        <Ionicons name="swap-horizontal" size={15} color={colors.red} />
+        <Text style={styles.pairText}>{to === 'sw' ? 'Swahili' : 'English'}</Text>
+      </Pressable>
+
+      <Text style={styles.status}>{statusLine}</Text>
 
       <VoiceWaveform active={phase === 'listening'} />
 
@@ -117,43 +183,72 @@ export default function Voice() {
 
       {phase === 'result' ? (
         <GlassCard style={styles.result}>
-          <Text style={styles.resultLabel}>SWAHILI</Text>
-          <Text style={styles.resultText}>Habari, unaitwa nani?</Text>
-          <Text style={styles.resultLabel}>ENGLISH</Text>
-          <Text style={styles.resultText}>Hello, what is your name?</Text>
+          <View style={styles.resultHead}>
+            <Text style={styles.resultLabel}>{from === 'sw' ? 'SWAHILI' : 'ENGLISH'}</Text>
+            <Pressable
+              hitSlop={8}
+              onPress={() => void Clipboard.setStringAsync(translation)}
+              accessibilityLabel="Copy translation">
+              <Ionicons name="copy-outline" size={15} color={colors.secondaryText} />
+            </Pressable>
+          </View>
+          <Text style={styles.transcript}>{transcript}</Text>
+          <Text style={styles.resultLabel}>{to === 'sw' ? 'SWAHILI' : 'ENGLISH'}</Text>
+          <View style={styles.resultHead}>
+            <Text style={[styles.translation, styles.grow]}>{translation}</Text>
+            <Pressable
+              hitSlop={8}
+              onPress={() => void Share.share({ message: translation })}
+              accessibilityLabel="Share translation">
+              <Ionicons name="share-outline" size={15} color={colors.secondaryText} />
+            </Pressable>
+          </View>
+        </GlassCard>
+      ) : null}
+
+      {phase === 'processing' && transcript ? (
+        <GlassCard style={styles.result}>
+          <Text style={styles.resultLabel}>HEARD</Text>
+          <Text style={styles.transcript}>{transcript}</Text>
         </GlassCard>
       ) : null}
 
       {phase === 'denied' ? (
         <GlassCard style={styles.result}>
           <Text style={styles.resultLabel}>MICROPHONE BLOCKED</Text>
-          <Text style={styles.resultText}>
+          <Text style={styles.transcript}>
             Enable microphone access in Settings › Apps › Ndimi › Permissions, then try again.
           </Text>
         </GlassCard>
       ) : null}
 
+      {error ? (
+        <View style={styles.errorRow}>
+          <Ionicons name="alert-circle-outline" size={15} color={colors.red} />
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      ) : null}
+
       <View style={styles.controls}>
         {phase === 'listening' ? (
           <>
-            <CircleButton size={50} onPress={cancel} accessibilityLabel="Cancel">
+            <CircleButton size={50} onPress={discard} accessibilityLabel="Cancel">
               <Ionicons name="close" size={20} color={colors.text} />
             </CircleButton>
             <View style={styles.micWrap}>
               <CircleButton size={74} tone="solid" onPress={confirm} accessibilityLabel="Finish">
                 <Ionicons name="checkmark" size={28} color="#FFFFFF" />
               </CircleButton>
-              <Text style={styles.timer}>{format(seconds)}</Text>
+              <Text style={styles.timer}>{format(recorder.seconds)}</Text>
             </View>
             <View style={{ width: 50 }} />
           </>
-        ) : phase === 'result' || phase === 'denied' ? (
+        ) : phase === 'result' || phase === 'denied' || phase === 'error' ? (
           <PrimaryButton
             label="Record again"
             variant="ghost"
             onPress={() => {
-              cancel();
-              void start();
+              void discard().then(start);
             }}
           />
         ) : (
@@ -167,7 +262,11 @@ export default function Voice() {
               <Ionicons name="mic" size={28} color="#FFFFFF" />
             </CircleButton>
             {!ready ? (
-              <Text style={styles.hint}>Install a speech and translation model first.</Text>
+              <Text style={styles.hint}>
+                {!asr
+                  ? 'Install a speech model in Settings › Models.'
+                  : 'Install a translation model in Settings › Models.'}
+              </Text>
             ) : null}
           </View>
         )}
@@ -186,14 +285,32 @@ const styles = StyleSheet.create({
   content: { justifyContent: 'space-between' },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { ...type.h1, color: colors.text },
+  pair: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 999,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+  },
+  pairText: { ...type.label, color: colors.text },
   status: { ...type.label, color: colors.secondaryText, textAlign: 'center' },
   copy: { alignItems: 'center', gap: spacing.sm },
   hero: { ...type.hero, color: colors.text, textAlign: 'center' },
   ai: { color: colors.red },
   sub: { ...type.body, color: colors.secondaryText, textAlign: 'center' },
   result: { gap: spacing.xs },
+  resultHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   resultLabel: { ...type.label, color: colors.secondaryText },
-  resultText: { ...type.body, fontSize: 14, color: colors.text },
+  transcript: { ...type.body, fontSize: 14, color: colors.text },
+  translation: { ...type.body, fontSize: 14, color: colors.text },
+  grow: { flex: 1 },
+  errorRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2 },
+  errorText: { ...type.body, fontSize: 11, color: colors.red, flex: 1 },
   controls: { alignItems: 'center', gap: spacing.sm, paddingBottom: spacing.sm },
   micWrap: { alignItems: 'center', gap: spacing.sm },
   timer: { ...type.label, color: colors.secondaryText },

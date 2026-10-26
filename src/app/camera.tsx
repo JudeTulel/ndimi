@@ -62,7 +62,14 @@ export default function Camera() {
       }
       setText(recognised);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not read the image.');
+      const message = e instanceof Error ? e.message : 'Could not read the image.';
+      // The first OCR run pulls its weights from the QVAC registry, so a network
+      // failure surfaces here rather than at install time. Say so plainly.
+      setError(
+        /fetch|network|download|ENOTFOUND|registry/i.test(message)
+          ? `OCR needs one online run to fetch its weights (${message}).`
+          : message
+      );
     } finally {
       setBusy(false);
     }
@@ -125,7 +132,7 @@ export default function Camera() {
               <PrimaryButton
                 label="Translate"
                 compact
-                onPress={() => router.replace({ pathname: '/translate', params: { text } })}
+                onPress={() => router.replace({ pathname: '/translate', params: { text, from: 'camera' } })}
               />
             </View>
           </View>

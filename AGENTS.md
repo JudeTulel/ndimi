@@ -34,6 +34,18 @@ Run lint and typecheck before declaring any task done.
 Use EAS to build, sign, and submit the app in the cloud (`eas build`, `eas submit`) and to ship over-the-air updates (`eas update`) — no local Xcode or Android Studio required. Run EAS CLI as `bunx eas-cli <command>` in Bun projects, or `npx eas-cli@latest <command>` otherwise; substitute that for bare `eas` in docs examples.
 Docs: https://docs.expo.dev/eas/index.md
 
+## Local Android builds
+
+`android/` is generated and gitignored, so anything native lives in `app.json`. Two rules that cost real time to rediscover:
+
+- A debug APK is **not** standalone: the debug variant is in `debuggableVariants`, so it loads its JS from Metro and dies without the dev server. The Metro-free artifact is `assembleRelease`, which embeds the bundle and is already signed with the debug keystore.
+- Release builds must stay unminified (`enableMinifyInReleaseBuilds: false`) until the QVAC addons have ProGuard rules — R8 strips the native binding surface. `shrinkResources` has to be off with it.
+
+```bash
+cd android && ./gradlew assembleRelease   # installable, offline-capable APK
+adb install -r android/app/build/outputs/apk/release/app-release.apk
+```
+
 ## Rules
 
 - If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.

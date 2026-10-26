@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { CircleButton } from '../components/CircleButton';
 import { GlassCard } from '../components/GlassCard';
 import { Screen } from '../components/Screen';
@@ -10,8 +11,14 @@ import { colors, radius, spacing, type } from '../theme/tokens';
 import { CATALOG } from '../features/models/catalog';
 import { subscribe, type ModelStatusMap } from '../features/models/modelStore';
 import { saveTranslation } from '../features/history/historyStore';
+import { getDirection } from '../core/db/settings';
+import {
+  cancelTranslation,
+  translateText,
+  type TranslationLanguage,
+} from '../features/translate/translationService';
 
-const LANGS = [
+const LANGS: { code: TranslationLanguage; label: string }[] = [
   { code: 'en', label: 'English' },
   { code: 'sw', label: 'Swahili' },
 ];
@@ -21,33 +28,92 @@ export default function Translate() {
   const params = useLocalSearchParams<{ text?: string; from?: string }>();
   const [status, setStatus] = useState<ModelStatusMap>({});
   const [source, setSource] = useState(params.text ?? '');
-  const [result, setResult] = useState<string | null>(null);
+  const [result, setResult] = useState('');
   const [busy, setBusy] = useState(false);
-  const [from, setFrom] = useState('en');
+  const [error, setError] = useState<string | null>(null);
+  const [from, setFrom] = useState<TranslationLanguage>('en');
+  const [copied, setCopied] = useState(false);
+  const session = useRef({ cancelled: false });
 
   useEffect(() => subscribe(setStatus), []);
-  const to = from === 'en' ? 'sw' : 'en';
+
+  // Start in the direction the user chose in Profile; a hand-off from Camera or
+  // Voice overrides it below.
+  useEffect(() => {
+    void getDirection().then((preference) => setFrom(preference === 'sw-en' ? 'sw' : 'en'));
+  }, []);
+
+  // Camera and voice hand text over as a param; keep the field in sync when the
+  // screen is reused rather than remounted.
+  useEffect(() => {
+    if (params.text) {
+      setSource(params.text);
+      setResult('');
+      setError(null);
+    }
+    if (params.from === 'sw') setFrom('sw');
+  }, [params.text, params.from]);
+
+  useEffect(() => () => void cancelTranslation(), []);
+
+  const to: TranslationLanguage = from === 'en' ? 'sw' : 'en';
 
   const model = useMemo(
     () => CATALOG.find((m) => m.task === 'translation' && status[m.id]?.status === 'installed'),
     [status]
   );
 
-  // Inference adapters are not wired yet: gate on a real installed model, echo a
-  // marked result and persist it so History is exercised for real.
   const run = async () => {
-    if (!source.trim() || !model) return;
+    const text = source.trim();
+    if (!text || !model || busy) return;
+
     setBusy(true);
+    setError(null);
+    setResult('');
+    setCopied(false);
+    session.current = { cancelled: false };
+
     try {
-      const translated = source.trim();
+      const translated = await translateText(
+        { text, from, to },
+        (partial) => setResult(partial),
+        session.current
+      );
+      if (session.current.cancelled) return;
+      if (!translated) throw new Error('The model returned an empty translation.');
       setResult(translated);
       await saveTranslation(
-        { sourceText: source.trim(), translatedText: translated, sourceLanguage: from, targetLanguage: to },
-        params.from === 'camera' ? 'voice' : 'text',
+        { sourceText: text, translatedText: translated, sourceLanguage: from, targetLanguage: to },
+        // Camera scans are their own input type so History can icon them apart
+        // from typed text and speech.
+        params.from === 'camera' ? 'camera' : 'text',
         model.id
       );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Translation failed.');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const stop = async () => {
+    session.current.cancelled = true;
+    await cancelTranslation();
+    setBusy(false);
+  };
+
+  const copy = async () => {
+    if (!result) return;
+    await Clipboard.setStringAsync(result);
+    setCopied(true);
+  };
+
+  const swap = () => {
+    setFrom(to);
+    // Swap the panes too, so an existing pair reads correctly in the new direction.
+    if (result) {
+      setSource(result);
+      setResult(source);
     }
   };
 
@@ -76,7 +142,7 @@ export default function Translate() {
         </Text>
       </View>
 
-      <Pressable style={styles.langRow} onPress={() => setFrom(to)}>
+      <Pressable style={styles.langRow} onPress={swap} accessibilityRole="button">
         <View style={styles.langPill}>
           <Text style={styles.langText}>{LANGS.find((l) => l.code === from)?.label}</Text>
         </View>
@@ -108,19 +174,48 @@ export default function Translate() {
           <CircleButton
             size={44}
             tone="solid"
-            disabled={!source.trim() || !model || busy}
-            onPress={run}
-            accessibilityLabel="Translate">
-            <Ionicons name="paper-plane-outline" size={18} color="#FFFFFF" />
+            disabled={!busy && (!source.trim() || !model)}
+            onPress={busy ? stop : run}
+            accessibilityLabel={busy ? 'Stop' : 'Translate'}>
+            <Ionicons name={busy ? 'stop' : 'paper-plane-outline'} size={18} color="#FFFFFF" />
           </CircleButton>
         </View>
       </GlassCard>
 
       {result ? (
         <GlassCard style={styles.resultCard}>
-          <Text style={styles.resultLabel}>TRANSLATION</Text>
+          <View style={styles.resultHead}>
+            <Text style={styles.resultLabel}>
+              {to === 'sw' ? 'SWAHILI' : 'ENGLISH'}
+              {busy ? ' · TRANSLATING' : ''}
+            </Text>
+            {!busy ? (
+              <View style={styles.resultActions}>
+                <Pressable onPress={copy} hitSlop={8}>
+                  <Ionicons
+                    name={copied ? 'checkmark' : 'copy-outline'}
+                    size={16}
+                    color={colors.secondaryText}
+                  />
+                </Pressable>
+                <Pressable
+                  onPress={() => void Share.share({ message: result })}
+                  hitSlop={8}
+                  accessibilityLabel="Share">
+                  <Ionicons name="share-outline" size={16} color={colors.secondaryText} />
+                </Pressable>
+              </View>
+            ) : null}
+          </View>
           <Text style={styles.resultText}>{result}</Text>
         </GlassCard>
+      ) : null}
+
+      {error ? (
+        <View style={styles.errorRow}>
+          <Ionicons name="alert-circle-outline" size={15} color={colors.red} />
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
       ) : null}
 
       {!model ? (
@@ -173,8 +268,12 @@ const styles = StyleSheet.create({
   },
   actions: { flexDirection: 'row', gap: spacing.sm },
   resultCard: { gap: spacing.xs },
+  resultHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  resultActions: { flexDirection: 'row', gap: spacing.md },
   resultLabel: { ...type.label, color: colors.secondaryText },
   resultText: { ...type.body, fontSize: 14, color: colors.text },
+  errorRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2 },
+  errorText: { ...type.body, fontSize: 11, color: colors.red, flex: 1 },
   warn: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2 },
   warnText: { ...type.body, fontSize: 11, color: colors.red },
 });

@@ -22,9 +22,10 @@ export type CatalogModel = {
   /** Surface label, e.g. Q4_K_M. */
   quantization: string;
   /**
-   * `registry://` sources are fetched and checksum-verified by the QVAC runtime
-   * itself (expo-file-system cannot read that scheme), so they bypass the app
-   * download pipeline and are installed on first load.
+   * `registry://` artifacts are resolved by the QVAC runtime itself. They are only
+   * marked `runtimeManaged` when the app cannot fetch them; the OCR pair uses the
+   * HTTPS mirror of the same registry key so it downloads with real progress and
+   * can be verified and resumed like any other artifact.
    */
   runtimeManaged?: boolean;
 };

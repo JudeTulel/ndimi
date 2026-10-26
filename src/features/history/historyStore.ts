@@ -14,12 +14,21 @@ const SCHEMA = `
     created_at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_translations_created_at ON translations(created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_translations_languages ON translations(source_language, target_language);
 `;
+
+export type InputType = 'text' | 'voice' | 'camera';
 
 export type HistoryEntry = TranslationResult & {
   id: string;
-  inputType: 'text' | 'voice';
+  inputType: InputType;
   createdAt: string;
+};
+
+export type HistoryQuery = {
+  q?: string;
+  pair?: { from: string; to: string };
+  limit?: number;
 };
 
 async function ensure() {
@@ -27,9 +36,13 @@ async function ensure() {
   await db.execAsync(SCHEMA);
 }
 
+function toInputType(value: string): InputType {
+  return value === 'voice' || value === 'camera' ? value : 'text';
+}
+
 export async function saveTranslation(
   result: TranslationResult,
-  inputType: 'text' | 'voice',
+  inputType: InputType,
   modelId?: string
 ): Promise<void> {
   await ensure();
@@ -47,9 +60,24 @@ export async function saveTranslation(
   );
 }
 
-export async function listHistory(limit = 20): Promise<HistoryEntry[]> {
+export async function listHistory(query: HistoryQuery = {}): Promise<HistoryEntry[]> {
   await ensure();
   const db = await getDatabase();
+
+  const where: string[] = [];
+  const args: (string | number)[] = [];
+
+  const q = query.q?.trim();
+  if (q) {
+    where.push('(source_text LIKE ? OR translated_text LIKE ?)');
+    const like = `%${q}%`;
+    args.push(like, like);
+  }
+  if (query.pair) {
+    where.push('source_language = ? AND target_language = ?');
+    args.push(query.pair.from, query.pair.to);
+  }
+
   const rows = await db.getAllAsync<{
     id: string;
     source_language: string;
@@ -58,7 +86,11 @@ export async function listHistory(limit = 20): Promise<HistoryEntry[]> {
     translated_text: string;
     input_type: string;
     created_at: string;
-  }>('SELECT * FROM translations ORDER BY created_at DESC LIMIT ?', limit);
+  }>(
+    `SELECT * FROM translations${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY created_at DESC LIMIT ?`,
+    ...args,
+    query.limit ?? 100
+  );
 
   return rows.map((row) => ({
     id: row.id,
@@ -66,9 +98,19 @@ export async function listHistory(limit = 20): Promise<HistoryEntry[]> {
     targetLanguage: row.target_language,
     sourceText: row.source_text,
     translatedText: row.translated_text,
-    inputType: row.input_type === 'voice' ? 'voice' : 'text',
+    inputType: toInputType(row.input_type),
     createdAt: row.created_at,
   }));
+}
+
+/** Distinct language pairs present in history, for the filter row. */
+export async function listPairs(): Promise<{ from: string; to: string }[]> {
+  await ensure();
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<{ source_language: string; target_language: string }>(
+    'SELECT DISTINCT source_language, target_language FROM translations'
+  );
+  return rows.map((row) => ({ from: row.source_language, to: row.target_language }));
 }
 
 export async function deleteEntry(id: string): Promise<void> {

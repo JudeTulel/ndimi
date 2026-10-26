@@ -1,6 +1,12 @@
 import * as Crypto from 'expo-crypto';
 import * as FileSystem from 'expo-file-system/legacy';
 import { getDatabase } from '../../core/db/database';
+import { unloadAsrModel } from '../voice/asrService';
+import { unloadTranslationModel } from '../translate/translationService';
+import { unloadChatModel } from '../chat/chatService';
+import { unloadOcrModel } from '../ocr/ocrService';
+import { toRuntimePath } from '../../core/fs/paths';
+import { cancel, downloadAsset, loadModel, unloadModel } from '@qvac/sdk';
 import {
   CATALOG,
   downloadUrl,
@@ -10,7 +16,14 @@ import {
 
 export type ModelState =
   | { status: 'absent' }
-  | { status: 'downloading'; progress: number; bytesWritten: number; totalBytes: number }
+  | {
+      status: 'downloading';
+      progress: number;
+      bytesWritten: number;
+      totalBytes: number;
+    }
+  /** Partial bytes on disk from an earlier run; `startDownload` continues them. */
+  | { status: 'paused'; bytesWritten: number; totalBytes: number }
   | { status: 'verifying' }
   | { status: 'installed'; localPath: string; installedAt: string }
   | { status: 'failed'; message: string };
@@ -19,17 +32,77 @@ export type ModelStatusMap = Record<string, ModelState>;
 
 const MODEL_DIR = `${FileSystem.documentDirectory}models/`;
 
+/**
+ * Installed artifacts keep their upstream filename.
+ *
+ * The QVAC runtime identifies TranslatePsy weights by artifact basename (matched
+ * against `/^TranslatePsy-AfriSLM-…-imat\.gguf$/i`) and swaps in the model card's
+ * prompt template when it matches. Naming the file after the catalog id would
+ * quietly fall back to the generic LLM translate prompt, so the basename has to
+ * survive the download.
+ */
 function partUri(model: CatalogModel): string {
-  return `${MODEL_DIR}${model.id}.part`;
+  return `${MODEL_DIR}${model.filename}.part`;
 }
 
 function finalUri(model: CatalogModel): string {
-  return `${MODEL_DIR}${model.id}`;
+  return `${MODEL_DIR}${model.filename}`;
 }
 
 const downloaders = new Map<string, FileSystem.DownloadResumable>();
+/** Cancellers for SDK-driven (`registry://`) asset fetches, keyed by model id. */
+const assetTasks = new Map<string, () => void>();
 const listeners = new Set<(map: ModelStatusMap) => void>();
 let snapshot: ModelStatusMap = {};
+
+/**
+ * Rebuilds a resumable for bytes already on disk.
+ *
+ * The native task that produced a `.part` file dies with the app, so resuming
+ * after a restart needs a fresh resumable that continues from the file's current
+ * length. `resumeData` is the offset: the native layer turns it into a `Range`
+ * header *and* opens the file in append mode. Passing a Range header instead
+ * would fetch the tail but truncate the file, so it has to be resumeData.
+ * Returns null when the partial is already complete (e.g. the app died between
+ * the last byte and verification) — the caller then verifies instead.
+ */
+async function resumableFrom(model: CatalogModel): Promise<FileSystem.DownloadResumable | null> {
+  const info = await FileSystem.getInfoAsync(partUri(model));
+  if (!info.exists) return null;
+  const have = info.size ?? 0;
+  if (have >= model.sizeBytes) return null;
+
+  return FileSystem.createDownloadResumable(
+    downloadUrl(model),
+    partUri(model),
+    {},
+    () => onProgress(model),
+    String(have)
+  );
+}
+
+function onProgress(model: CatalogModel) {
+  // The native counter is not reliable as a file position: in append mode it
+  // already carries the resumed bytes and can run past the real length. The file
+  // itself is the ground truth, so sample it — throttled, since progress
+  // callbacks fire faster than a stat is worth.
+  const now = Date.now();
+  if (now - lastSampleAt < 400) return;
+  lastSampleAt = now;
+
+  void FileSystem.getInfoAsync(partUri(model)).then((info) => {
+    if (!info.exists) return;
+    const written = Math.min(info.size ?? 0, model.sizeBytes);
+    setState(model.id, {
+      status: 'downloading',
+      progress: model.sizeBytes > 0 ? written / model.sizeBytes : 0,
+      bytesWritten: written,
+      totalBytes: model.sizeBytes,
+    });
+  });
+}
+
+let lastSampleAt = 0;
 
 function emit() {
   listeners.forEach((fn) => fn({ ...snapshot }));
@@ -66,6 +139,9 @@ async function ensureSchema() {
 }
 
 async function fileExists(uri: string): Promise<boolean> {
+  // `registry://` artifacts live in the runtime's own cache, not on a path
+  // expo-file-system can stat, so treat a recorded row as the proof of presence.
+  if (uri.startsWith('registry://')) return true;
   const info = await FileSystem.getInfoAsync(uri);
   return info.exists;
 }
@@ -95,13 +171,19 @@ export async function hydrate(): Promise<void> {
       await db.runAsync('DELETE FROM models WHERE id = ?', row.id);
     }
   }
-  // A `.part` file with no row is an interrupted download; report it as failed
-  // so the UI offers retry rather than silently showing nothing.
+  // A `.part` file with no row is an interrupted download. Report it as paused
+  // with its real length so the UI offers resume and the progress bar restarts
+  // where it left off instead of at zero.
   for (const model of CATALOG) {
     if (next[model.id]) continue;
-    if (await fileExists(partUri(model))) {
-      next[model.id] = { status: 'failed', message: 'Download was interrupted.' };
-    }
+    if (model.runtimeManaged) continue;
+    const info = await FileSystem.getInfoAsync(partUri(model));
+    if (!info.exists) continue;
+    next[model.id] = {
+      status: 'paused',
+      bytesWritten: info.size ?? 0,
+      totalBytes: model.sizeBytes,
+    };
   }
   snapshot = next;
   emit();
@@ -120,50 +202,88 @@ export async function startDownload(model: CatalogModel): Promise<void> {
   if (snapshot[model.id]?.status === 'installed') return;
 
   await ensureSchema();
-  await FileSystem.makeDirectoryAsync(MODEL_DIR, { intermediates: true }).catch(() => {});
-  if (await fileExists(partUri(model))) {
-    await FileSystem.deleteAsync(partUri(model), { idempotent: true });
+
+  // `registry://` artifacts are fetched by the QVAC runtime itself (expo-file-system
+  // cannot resolve the scheme) and it keeps them in its own cache, so there is no
+  // part file here: hand the load over, then record the install.
+  if (model.runtimeManaged) {
+    await installRuntimeManaged(model);
+    return;
   }
+
+  await FileSystem.makeDirectoryAsync(MODEL_DIR, { intermediates: true }).catch(() => {});
+
+  // Keep a stale final file from shadowing the download, but never delete the
+  // `.part`: those bytes are what makes a retry a resume rather than a restart.
   if (await fileExists(finalUri(model))) {
     await FileSystem.deleteAsync(finalUri(model), { idempotent: true });
   }
 
+  const info = await FileSystem.getInfoAsync(partUri(model));
+  if (info.exists && (info.size ?? 0) >= model.sizeBytes) {
+    // Everything arrived but the app stopped before verification.
+    downloaders.delete(model.id);
+    await verifyAndInstall(model);
+    return;
+  }
+
+  const existing = info.exists ? (info.size ?? 0) : 0;
+
   setState(model.id, {
     status: 'downloading',
-    progress: 0,
-    bytesWritten: 0,
+    progress: existing / model.sizeBytes,
+    bytesWritten: existing,
     totalBytes: model.sizeBytes,
   });
 
-  const resumable = FileSystem.createDownloadResumable(
-    downloadUrl(model),
-    partUri(model),
-    {},
-    (data) => {
-      const total = data.totalBytesExpectedToWrite || model.sizeBytes;
-      setState(model.id, {
-        status: 'downloading',
-        progress: total > 0 ? data.totalBytesWritten / total : 0,
-        bytesWritten: data.totalBytesWritten,
-        totalBytes: total,
-      });
-    }
+  const resumable = await resumableFrom(model);
+  if (!resumable) {
+    setState(model.id, {
+      status: 'downloading',
+      progress: 0,
+      bytesWritten: 0,
+      totalBytes: model.sizeBytes,
+    });
+  }
+  downloaders.set(
+    model.id,
+    resumable ??
+      FileSystem.createDownloadResumable(
+        downloadUrl(model),
+        partUri(model),
+        {},
+        () => onProgress(model)
+      )
   );
-  downloaders.set(model.id, resumable);
 
   try {
-    const result = await resumable.downloadAsync();
+    const result = await downloaders.get(model.id)!.downloadAsync();
     if (!result) {
-      // pauseAsync() resolves downloadAsync with undefined; leave state alone.
-      if (snapshot[model.id]?.status === 'downloading') {
-        setState(model.id, { status: 'failed', message: 'Download paused.' });
-      }
+      // pauseAsync() resolves downloadAsync with undefined; the partial file is
+      // kept and reported as paused so the same node resumes.
+      const bytes = await sizeOf(partUri(model));
+      setState(model.id, {
+        status: 'paused',
+        bytesWritten: bytes,
+        totalBytes: model.sizeBytes,
+      });
       return;
     }
     downloaders.delete(model.id);
     await verifyAndInstall(model);
   } catch (error) {
     downloaders.delete(model.id);
+    // Bytes fetched so far are still good, so report a resumable pause instead of
+    // a plain failure whenever something is on disk.
+    const bytes = await sizeOf(partUri(model));
+    if (bytes > 0) {
+      setState(model.id, {
+        status: 'paused',
+        bytesWritten: bytes,
+        totalBytes: model.sizeBytes,
+      });
+      return;
+    }
     setState(model.id, {
       status: 'failed',
       message: error instanceof Error ? error.message : 'Download failed.',
@@ -171,6 +291,21 @@ export async function startDownload(model: CatalogModel): Promise<void> {
   }
 }
 
+async function sizeOf(uri: string): Promise<number> {
+  const info = await FileSystem.getInfoAsync(uri);
+  return info.exists ? (info.size ?? 0) : 0;
+}
+
+/**
+ * Installs optimistically.
+ *
+ * Hashing a 641 MB file through expo-crypto is slow: the whole artifact has to be
+ * marshalled into JS in 4 MB base64 chunks and digested there, which is the long
+ * "Verifying SHA-256…" stall. So the mandatory gates are the cheap ones — the byte
+ * count must match and the runtime must accept the load — and the model goes Ready
+ * on those. The checksum then runs in the background and demotes the model if it
+ * disagrees, which is the only case that can.
+ */
 async function verifyAndInstall(model: CatalogModel): Promise<void> {
   setState(model.id, { status: 'verifying' });
 
@@ -181,6 +316,16 @@ async function verifyAndInstall(model: CatalogModel): Promise<void> {
   }
   const size = info.size;
   if (typeof size === 'number' && size !== model.sizeBytes) {
+    // Short means the transfer ended early; keep the bytes so the next attempt
+    // resumes from here instead of starting over.
+    if (size < model.sizeBytes) {
+      setState(model.id, {
+        status: 'paused',
+        bytesWritten: size,
+        totalBytes: model.sizeBytes,
+      });
+      return;
+    }
     await FileSystem.deleteAsync(partUri(model), { idempotent: true });
     setState(model.id, {
       status: 'failed',
@@ -189,23 +334,27 @@ async function verifyAndInstall(model: CatalogModel): Promise<void> {
     return;
   }
 
-  const digest = await Crypto.digest(
-    Crypto.CryptoDigestAlgorithm.SHA256,
-    (await readFileBytes(partUri(model))) as unknown as BufferSource
-  );
-  const actual = Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+  // Atomic-ish install: move the part file into its final name, then record it. A
+  // crash between the two leaves a file the next hydrate deletes.
+  await FileSystem.moveAsync({ from: partUri(model), to: finalUri(model) });
 
-  if (actual !== model.sha256) {
-    await FileSystem.deleteAsync(partUri(model), { idempotent: true });
-    setState(model.id, { status: 'failed', message: 'SHA-256 verification failed.' });
+  // A matching byte count is not proof of integrity, but a file can also match and
+  // still fail to open in the addon — so the load is the gate that has to happen
+  // now. The checksum is the slow one and runs after.
+  try {
+    const probeId = await loadRuntimeModel(model);
+    await unloadModel({ modelId: probeId }).catch(() => {});
+  } catch (error) {
+    await FileSystem.deleteAsync(finalUri(model), { idempotent: true });
+    setState(model.id, {
+      status: 'failed',
+      message: `Downloaded, but the runtime rejected it: ${
+        error instanceof Error ? error.message : 'load failed'
+      }`,
+    });
     return;
   }
 
-  // Atomic-ish install: move the verified part file into its final name, then
-  // record it. A crash between the two leaves a file the next hydrate deletes.
-  await FileSystem.moveAsync({ from: partUri(model), to: finalUri(model) });
   const installedAt = new Date().toISOString();
 
   const db = await getDatabase();
@@ -223,6 +372,170 @@ async function verifyAndInstall(model: CatalogModel): Promise<void> {
     localPath: finalUri(model),
     installedAt,
   });
+
+  void verifyChecksum(model, installedAt);
+}
+
+/**
+ * Background integrity check against the catalog's published digest. Runs after
+ * the model is already usable; a mismatch unloads, deletes and demotes it so the
+ * next run cannot use corrupted weights.
+ */
+export async function verifyChecksum(model: CatalogModel, installedAt: string): Promise<boolean> {
+  let actual: string;
+  try {
+    if (!(await fileExists(finalUri(model)))) return false;
+    const digest = await Crypto.digest(
+      Crypto.CryptoDigestAlgorithm.SHA256,
+      (await readFileBytes(finalUri(model))) as unknown as BufferSource
+    );
+    actual = Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+  } catch (error) {
+    setState(model.id, {
+      status: 'failed',
+      message: `Could not checksum the download: ${
+        error instanceof Error ? error.message : 'read failed'
+      }`,
+    });
+    return false;
+  }
+
+  if (actual === model.sha256) {
+    setState(model.id, { status: 'installed', localPath: finalUri(model), installedAt });
+    return true;
+  }
+
+  // Demote only if the same install is still the current one — a reinstall in the
+  // meantime has already replaced the file and its own check decides.
+  const current = getSnapshot()[model.id];
+  if (current?.status === 'installed' && current.installedAt !== installedAt) return false;
+
+  if (model.task === 'translation') await unloadTranslationModel();
+  if (model.task === 'asr') await unloadAsrModel();
+  if (model.task === 'chat') await unloadChatModel();
+  if (model.task === 'ocr') await unloadOcrModel();
+
+  await FileSystem.deleteAsync(finalUri(model), { idempotent: true });
+  const db = await getDatabase();
+  await db.runAsync('DELETE FROM models WHERE id = ?', model.id);
+  setState(model.id, { status: 'failed', message: 'SHA-256 verification failed.' });
+  return false;
+}
+
+/**
+ * Installs a `registry://` artifact.
+ *
+ * A plain `loadModel` was the whole bug here: the runtime fetched both OCR
+ * artifacts inside the load, so a cold install was a silent multi-minute wait with
+ * no progress, no cancel and no resume. `downloadAsset` separates the fetch, and it
+ * reports real byte counts for registry sources. The load afterwards is then local.
+ */
+async function installRuntimeManaged(model: CatalogModel): Promise<void> {
+  // OCR is a pair: the CRNN recognizer is useless without the CRAFT detector, and
+  // the load resolves the partner itself. Fetch both here so neither is left to
+  // happen inside a load.
+  const sources =
+    model.task === 'ocr'
+      ? CATALOG.filter((m) => m.task === 'ocr').map((m) => m.url)
+      : [model.url];
+  const total = CATALOG.filter((m) => m.task === model.task)
+    .filter((m) => sources.includes(m.url))
+    .reduce((sum, m) => sum + m.sizeBytes, 0);
+
+  setState(model.id, { status: 'downloading', progress: 0, bytesWritten: 0, totalBytes: total });
+
+  const done = new Map<string, number>();
+  try {
+    const tasks = sources.map((src) =>
+      downloadAsset({
+        assetSrc: src,
+        onProgress: (update) => {
+          done.set(src, update.downloaded);
+          const written = [...done.values()].reduce((a, b) => a + b, 0);
+          setState(model.id, {
+            status: 'downloading',
+            progress: total > 0 ? Math.min(written / total, 1) : 0,
+            bytesWritten: written,
+            totalBytes: total,
+          });
+        },
+      })
+    );
+    assetTasks.set(model.id, () => tasks.forEach((t) => cancel({ requestId: t.requestId })));
+    await Promise.all(tasks);
+    assetTasks.delete(model.id);
+  } catch (error) {
+    assetTasks.delete(model.id);
+    const current = getSnapshot()[model.id];
+    if (current?.status !== 'downloading') return; // cancelled; state already set
+    setState(model.id, {
+      status: 'failed',
+      message: error instanceof Error ? error.message : 'Could not fetch the model.',
+    });
+    return;
+  }
+
+  setState(model.id, { status: 'verifying' });
+  try {
+    const modelId = await loadRuntimeModel(model);
+    await unloadModel({ modelId }).catch(() => {});
+  } catch (error) {
+    setState(model.id, {
+      status: 'failed',
+      message: `Fetched, but the runtime rejected it: ${
+        error instanceof Error ? error.message : 'load failed'
+      }`,
+    });
+    return;
+  }
+
+  const installedAt = new Date().toISOString();
+  const db = await getDatabase();
+  await db.runAsync(
+    'INSERT OR REPLACE INTO models (id, task, local_path, sha256, installed_at) VALUES (?, ?, ?, ?, ?)',
+    model.id,
+    model.task,
+    model.url,
+    model.sha256,
+    installedAt
+  );
+
+  setState(model.id, { status: 'installed', localPath: model.url, installedAt });
+}
+
+/**
+ * Loads an installed artifact through the same config the inference path uses, so
+ * the smoke test proves the real path rather than a permissive one.
+ */
+async function loadRuntimeModel(model: CatalogModel): Promise<string> {
+  switch (model.task) {
+    case 'ocr':
+      return loadModel({
+        modelSrc: model.runtimeManaged ? model.url : toRuntimePath(finalUri(model)),
+        modelType: 'ggml-ocr',
+        modelConfig: { pipelineType: 'easyocr', langList: ['en'], canvasSize: 1280 },
+      });
+    case 'translation':
+      return loadModel({
+        modelSrc: toRuntimePath(finalUri(model)),
+        modelType: 'llamacpp-completion',
+        modelConfig: { ctx_size: 2048, verbosity: 0 },
+      });
+    case 'chat':
+      return loadModel({
+        modelSrc: toRuntimePath(finalUri(model)),
+        modelType: 'llamacpp-completion',
+        modelConfig: { ctx_size: 2048 },
+      });
+    case 'asr':
+      return loadModel({
+        modelSrc: toRuntimePath(finalUri(model)),
+        modelType: 'whispercpp-transcription',
+        modelConfig: { strategy: 'greedy', no_timestamps: true, n_threads: 4 },
+      });
+  }
 }
 
 /**
@@ -271,26 +584,58 @@ function base64ToBytes(value: string): Uint8Array {
   return out.subarray(0, index);
 }
 
+/**
+ * Cancelling parks the download instead of discarding it: the bytes on disk are
+ * kept and the node offers Resume. `remove()` is the way to reclaim the space.
+ */
 export async function cancelDownload(id: string): Promise<void> {
-  const downloader = downloaders.get(id);
-  if (!downloader) return;
-  downloaders.delete(id);
-  try {
-    await downloader.pauseAsync();
-  } catch {
-    // ignore — state is set below regardless
-  }
   const model = CATALOG.find((m) => m.id === id);
-  setState(id, { status: 'failed', message: 'Download cancelled.' });
-  if (model && (await fileExists(partUri(model)))) {
-    await FileSystem.deleteAsync(partUri(model), { idempotent: true });
+  if (!model) return;
+
+  // Registry fetches are owned by the SDK: cancel the request and stop there. The
+  // runtime keeps its own cache, so there is no partial file for the app to keep.
+  const assetCancel = assetTasks.get(id);
+  if (assetCancel) {
+    assetTasks.delete(id);
+    assetCancel();
+    setState(id, { status: 'absent' });
+    return;
+  }
+
+  const downloader = downloaders.get(id);
+  downloaders.delete(id);
+  if (downloader) {
+    try {
+      await downloader.pauseAsync();
+    } catch {
+      // ignore — the state below is what the UI reads
+    }
+  }
+
+  const bytes = await sizeOf(partUri(model));
+  if (bytes > 0) {
+    setState(id, { status: 'paused', bytesWritten: bytes, totalBytes: model.sizeBytes });
+  } else {
+    setState(id, { status: 'absent' });
   }
 }
 
 export async function remove(model: CatalogModel): Promise<void> {
+  // Drop any warm runtime handle first: unloading after the file is gone leaves
+  // the addon holding a descriptor to a deleted path.
+  if (model.task === 'translation') await unloadTranslationModel();
+  if (model.task === 'asr') await unloadAsrModel();
+  if (model.task === 'chat') await unloadChatModel();
+  if (model.task === 'ocr') await unloadOcrModel();
+
   const db = await getDatabase();
   await db.runAsync('DELETE FROM models WHERE id = ?', model.id);
-  await FileSystem.deleteAsync(finalUri(model), { idempotent: true });
-  await FileSystem.deleteAsync(partUri(model), { idempotent: true });
+
+  // Registry weights stay in the runtime's shared cache — another catalog entry
+  // may depend on the same artifact — so only the app-managed files are deleted.
+  if (!model.runtimeManaged) {
+    await FileSystem.deleteAsync(finalUri(model), { idempotent: true });
+    await FileSystem.deleteAsync(partUri(model), { idempotent: true });
+  }
   setState(model.id, { status: 'absent' });
 }
