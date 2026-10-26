@@ -52,7 +52,7 @@ export default function Home() {
         </View>
       </GlassCard>
 
-      <GlassCard onPress={() => router.push('/settings/models')} style={styles.assistant}>
+      <GlassCard onPress={() => router.push('/(tabs)/chat')} style={styles.assistant}>
         <View style={styles.assistantIcon}>
           <Ionicons name={modelsReady ? 'sparkles' : 'cloud-download-outline'} size={18} color={colors.red} />
         </View>

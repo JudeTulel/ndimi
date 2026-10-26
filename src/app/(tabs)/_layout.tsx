@@ -13,9 +13,8 @@ export default function TabsLayout() {
         tabBarActiveTintColor: colors.red,
         tabBarInactiveTintColor: colors.secondaryText,
         tabBarStyle: {
-          // Cream, not white: edge-to-edge leaves the system navigation bar
-          // transparent, and it paints white glyphs — on a white tab bar they
-          // vanish entirely.
+          // Background tone, not white: edge-to-edge leaves the system nav bar
+          // transparent and it paints white glyphs.
           backgroundColor: colors.background,
           borderTopColor: colors.border,
           height: 58 + insets.bottom,
@@ -28,6 +27,15 @@ export default function TabsLayout() {
         options={{
           title: 'Home',
           tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="chat"
+        options={{
+          title: 'Assistant',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="sparkles-outline" size={size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
