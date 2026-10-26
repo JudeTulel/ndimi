@@ -6,9 +6,11 @@ export type CatalogModel = {
   task: ModelTask;
   title: string;
   summary: string;
-  /** Hugging Face repository, pinned by revision. */
-  repo: string;
-  revision: string;
+  /** Source URL: an https Hub artifact or a `registry://` QVAC registry entry. */
+  url: string;
+  /** Provenance for display; registry entries have no Hub revision. */
+  repo?: string;
+  revision?: string;
   filename: string;
   sizeBytes: number;
   /** SHA-256 of the artifact as published by the Hub (LFS oid). */
@@ -19,6 +21,12 @@ export type CatalogModel = {
   languages: string[];
   /** Surface label, e.g. Q4_K_M. */
   quantization: string;
+  /**
+   * `registry://` sources are fetched and checksum-verified by the QVAC runtime
+   * itself (expo-file-system cannot read that scheme), so they bypass the app
+   * download pipeline and are installed on first load.
+   */
+  runtimeManaged?: boolean;
 };
 
 const GB = 1024 * 1024 * 1024;
@@ -35,6 +43,7 @@ export const CATALOG: CatalogModel[] = [
     task: 'asr',
     title: 'Whisper Swahili Small',
     summary: 'Swahili speech recognition. Converts recorded audio to text on device.',
+    url: 'https://huggingface.co/malinali-app/whisper-swahili-small-ggml/resolve/403b03e660aa3635823c42e4589c57a9b2c26fe5/ggml-model-q8_0.bin',
     repo: 'malinali-app/whisper-swahili-small-ggml',
     revision: '403b03e660aa3635823c42e4589c57a9b2c26fe5',
     filename: 'ggml-model-q8_0.bin',
@@ -51,6 +60,7 @@ export const CATALOG: CatalogModel[] = [
     task: 'translation',
     title: 'TranslatePsy-AfriSLM 0.8B',
     summary: 'English ↔ Swahili translation. Smallest variant, recommended first install.',
+    url: 'https://huggingface.co/qvac/TranslatePsy-AfriSLM-0.8B-Q4-GGUF/resolve/14d6fd1e24c9f94a5e40c2e91c066241aede0dce/TranslatePsy-AfriSLM-0.8B-Q4_K_M-imat.gguf',
     repo: 'qvac/TranslatePsy-AfriSLM-0.8B-Q4-GGUF',
     revision: '14d6fd1e24c9f94a5e40c2e91c066241aede0dce',
     filename: 'TranslatePsy-AfriSLM-0.8B-Q4_K_M-imat.gguf',
@@ -67,6 +77,7 @@ export const CATALOG: CatalogModel[] = [
     task: 'translation',
     title: 'TranslatePsy-AfriSLM 2B',
     summary: 'Higher quality translation at roughly twice the memory and disk cost.',
+    url: 'https://huggingface.co/qvac/TranslatePsy-AfriSLM-2B-Q4-GGUF/resolve/9bcceadebbcc5d36bba9f7f02141300a95ae8d04/TranslatePsy-AfriSLM-2B-Q4_K_M-imat.gguf',
     repo: 'qvac/TranslatePsy-AfriSLM-2B-Q4-GGUF',
     revision: '9bcceadebbcc5d36bba9f7f02141300a95ae8d04',
     filename: 'TranslatePsy-AfriSLM-2B-Q4_K_M-imat.gguf',
@@ -83,6 +94,7 @@ export const CATALOG: CatalogModel[] = [
     task: 'chat',
     title: 'Llama 3.2 1B Instruct',
     summary: 'General on-device chat and writing help. Independent of translation.',
+    url: 'https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/067b946cf014b7c697f3654f621d577a3e3afd1c/Llama-3.2-1B-Instruct-Q4_K_M.gguf',
     repo: 'bartowski/Llama-3.2-1B-Instruct-GGUF',
     revision: '067b946cf014b7c697f3654f621d577a3e3afd1c',
     filename: 'Llama-3.2-1B-Instruct-Q4_K_M.gguf',
@@ -95,41 +107,42 @@ export const CATALOG: CatalogModel[] = [
     quantization: 'Q4_K_M',
   },
   {
-    id: 'glm-ocr-q8',
+    id: 'ocr-latin-g2',
+    runtimeManaged: true,
     task: 'ocr',
-    title: 'GLM-OCR',
-    summary: 'Reads printed text from a photo so it can be translated. Needs its vision projector.',
-    repo: 'ggml-org/GLM-OCR-GGUF',
-    revision: '65a42de1148dbed2297e922b5dbc7d9b70c36578',
-    filename: 'GLM-OCR-Q8_0.gguf',
-    sizeBytes: 950_433_408,
-    sha256: '45bc244a6446aff850521dc41f18bc8d7105ad5f0c2c8c28af04e7cc4f4d50b1',
-    licence: 'MIT',
-    publisher: 'ggml-org',
+    title: 'OCR reader (Latin)',
+    summary: 'Recognises Latin-script text — English and Swahili — from a photo.',
+    url: 'registry://s3/qvac_models_compiled/ocr/gguf/easyocr/2026-05-14/latin_g2.gguf',
+    filename: 'latin_g2.gguf',
+    sizeBytes: 15_396_512,
+    sha256: 'dd1c7a436e9175904e63683e939635892f45c8c6377d5e14e87cf8b175e10768',
+    licence: 'Apache-2.0',
+    publisher: 'qvac registry',
     runtimePlugin: 'ggml-ocr',
     languages: ['en', 'sw'],
-    quantization: 'Q8_0',
+    quantization: 'f16',
   },
   {
-    id: 'glm-ocr-mmproj-q8',
+    id: 'ocr-craft-detector',
+    runtimeManaged: true,
     task: 'ocr',
-    title: 'GLM-OCR vision projector',
-    summary: 'Companion file for GLM-OCR. Install alongside it or the camera cannot read images.',
-    repo: 'ggml-org/GLM-OCR-GGUF',
-    revision: '65a42de1148dbed2297e922b5dbc7d9b70c36578',
-    filename: 'mmproj-GLM-OCR-Q8_0.gguf',
-    sizeBytes: 484_403_648,
-    sha256: '9c4b58e33e316ed142eb5dcb41abec3844d3e6e5dc361ffb782c3fa9d175141f',
-    licence: 'MIT',
-    publisher: 'ggml-org',
+    title: 'OCR text detector',
+    summary: 'Finds text regions for the OCR reader. Install alongside it.',
+    url: 'registry://s3/qvac_models_compiled/ocr/gguf/easyocr/2026-05-14/craft_mlt_25k.gguf',
+    filename: 'craft_mlt_25k.gguf',
+    sizeBytes: 83_133_856,
+    sha256: '74501993caf4581ce09b280f49a1b3d249c0f5a78496e047718b398457a875aa',
+    licence: 'Apache-2.0',
+    publisher: 'qvac registry',
     runtimePlugin: 'ggml-ocr',
     languages: ['*'],
-    quantization: 'Q8_0',
+    quantization: 'f32',
   },
 ];
 
 export function downloadUrl(model: CatalogModel): string {
-  return `https://huggingface.co/${model.repo}/resolve/${model.revision}/${model.filename}`;
+  if (model.url.startsWith('registry://')) return model.url;
+  return model.url;
 }
 
 export function formatBytes(bytes: number): string {

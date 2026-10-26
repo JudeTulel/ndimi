@@ -1,58 +1,44 @@
+import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { Screen } from '../components/Screen';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Image, StyleSheet, Text, View } from 'react-native';
 import { CircleButton } from '../components/CircleButton';
 import { PrimaryButton } from '../components/PrimaryButton';
-import { colors, radius, spacing, type } from '../theme/tokens';
-import { CATALOG } from '../features/models/catalog';
-import { subscribe, type ModelStatusMap } from '../features/models/modelStore';
+import { Screen } from '../components/Screen';
+import { colors, radius, spacing, surfaceTheme, type } from '../theme/tokens';
+import { readText } from '../features/ocr/ocrService';
 
 type Shot = { uri: string; base64?: string };
 
 /**
- * Camera capture for OCR. The camera itself is real; the recognition step reads
- * from an installed OCR model so the screen stays honest about what it can do.
+ * In-app capture. The camera is live; the recognised text is real OCR output from
+ * the installed GLM-OCR pair, handed to Translate as the source string.
  */
 export default function Camera() {
   const router = useRouter();
   const [permission, requestPermission] = useCameraPermissions();
-  const [status, setStatus] = useState<ModelStatusMap>({});
   const [shot, setShot] = useState<Shot | null>(null);
   const [busy, setBusy] = useState(false);
+  const [text, setText] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const camera = useRef<CameraView>(null);
 
-  useEffect(() => subscribe(setStatus), []);
   useEffect(() => {
-    if (permission && !permission.granted && permission.canAskAgain) {
-      void requestPermission();
-    }
+    if (permission && !permission.granted && permission.canAskAgain) void requestPermission();
   }, [permission, requestPermission]);
 
-  const ocrModel = useMemo(
-    () => CATALOG.find((m) => m.task === 'ocr' && status[m.id]?.status === 'installed'),
-    [status]
-  );
-  const hasProjector = useMemo(
-    () => CATALOG.some((m) => m.id.includes('mmproj') && status[m.id]?.status === 'installed'),
-    [status]
-  );
-  const ready = !!ocrModel && hasProjector;
-
   const capture = async () => {
-    setBusy(true);
-    try {
-      const photo = await camera.current?.takePictureAsync({ quality: 0.7, base64: true });
-      if (photo) setShot({ uri: photo.uri, base64: photo.base64 ?? undefined });
-    } finally {
-      setBusy(false);
-    }
+    setError(null);
+    setText(null);
+    const photo = await camera.current?.takePictureAsync({ quality: 0.7, base64: true });
+    if (photo) setShot({ uri: photo.uri, base64: photo.base64 ?? undefined });
   };
 
   const pick = async () => {
+    setError(null);
+    setText(null);
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       quality: 0.7,
@@ -63,15 +49,26 @@ export default function Camera() {
     }
   };
 
-  const useShot = () => {
+  const recognise = async () => {
     if (!shot) return;
-    // Recognition adapter lands next; hand the capture to Translate prefilled.
-    router.replace({ pathname: '/translate', params: { from: 'camera' } });
+    setBusy(true);
+    setError(null);
+    try {
+      if (!shot.base64) throw new Error('Capture failed to produce image data.');
+      const recognised = await readText(shot.base64);
+      if (!recognised) {
+        setError('No text found in that image. Try again with more light and less angle.');
+        return;
+      }
+      setText(recognised);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not read the image.');
+    } finally {
+      setBusy(false);
+    }
   };
 
-  if (!permission) {
-    return <Screen fixed>{null}</Screen>;
-  }
+  if (!permission) return <Screen fixed>{null}</Screen>;
 
   if (!permission.granted) {
     return (
@@ -88,45 +85,77 @@ export default function Camera() {
 
   return (
     <View style={styles.root}>
-      <CameraView ref={camera} style={StyleSheet.absoluteFill} facing="back" />
+      {shot ? (
+        <Image source={{ uri: shot.uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+      ) : (
+        <CameraView ref={camera} style={StyleSheet.absoluteFill} facing="back" />
+      )}
 
       <View style={styles.overlay}>
         <View style={styles.topRow}>
           <CircleButton onPress={() => router.back()} accessibilityLabel="Back">
             <Ionicons name="chevron-back" size={20} color={colors.text} />
           </CircleButton>
-          <Text style={styles.overlayTitle}>Scan text</Text>
+          <Text style={styles.overlayTitle}>{shot ? 'Review' : 'Scan text'}</Text>
           <CircleButton onPress={pick} accessibilityLabel="Choose from library">
             <Ionicons name="images-outline" size={18} color={colors.text} />
           </CircleButton>
         </View>
 
-        <View style={styles.frame} />
+        {!shot ? <View style={styles.frame} /> : null}
 
-        {!ready ? (
-          <Pressable style={styles.warn} onPress={() => router.push('/settings/models')}>
-            <Ionicons name="cloud-download-outline" size={15} color={colors.red} />
-            <Text style={styles.warnText}>
-              {!ocrModel ? 'Install an OCR model to read text' : 'Install the OCR vision projector'}
-            </Text>
-          </Pressable>
-        ) : null}
+        {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        {shot ? (
-          <View style={styles.captureCard}>
-            <Text style={styles.captureTitle}>Photo captured</Text>
-            <Text style={styles.captureCaption}>
-              {ready ? 'Send it to Translate to read and translate the text.' : 'Install the OCR model to read it.'}
+        {text ? (
+          <View style={styles.resultCard}>
+            <Text style={styles.resultLabel}>RECOGNISED TEXT</Text>
+            <Text style={styles.resultText} numberOfLines={5}>
+              {text}
             </Text>
-            <View style={styles.captureRow}>
-              <PrimaryButton label="Retake" variant="ghost" compact onPress={() => setShot(null)} />
-              <PrimaryButton label="Use photo" compact disabled={!ready} onPress={useShot} />
+            <View style={styles.row}>
+              <PrimaryButton
+                label="Retake"
+                variant="ghost"
+                compact
+                onPress={() => {
+                  setShot(null);
+                  setText(null);
+                }}
+              />
+              <PrimaryButton
+                label="Translate"
+                compact
+                onPress={() => router.replace({ pathname: '/translate', params: { text } })}
+              />
+            </View>
+          </View>
+        ) : shot ? (
+          <View style={styles.resultCard}>
+            <Text style={styles.resultLabel}>PHOTO CAPTURED</Text>
+            <Text style={styles.resultText}>Read the text in this photo?</Text>
+            <View style={styles.row}>
+              <PrimaryButton
+                label="Retake"
+                variant="ghost"
+                compact
+                onPress={() => setShot(null)}
+              />
+              <PrimaryButton
+                label={busy ? 'Reading…' : 'Read text'}
+                compact
+                disabled={busy}
+                onPress={recognise}
+              />
             </View>
           </View>
         ) : (
           <View style={styles.shutterRow}>
-            <CircleButton size={64} tone="solid" onPress={capture} disabled={busy} accessibilityLabel="Capture">
-              <Ionicons name="scan-outline" size={26} color="#FFFFFF" />
+            <CircleButton size={64} tone="solid" onPress={capture} accessibilityLabel="Capture">
+              {busy ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Ionicons name="scan-outline" size={26} color="#FFFFFF" />
+              )}
             </CircleButton>
           </View>
         )}
@@ -164,13 +193,15 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   warnText: { ...type.body, fontSize: 11, color: colors.text },
-  captureCard: {
+  error: { ...type.body, fontSize: 11, color: colors.red, textAlign: 'center' },
+  resultCard: {
     backgroundColor: colors.surface,
     borderRadius: radius.card,
     padding: spacing.md,
     gap: spacing.xs,
+    ...surfaceTheme.shadow,
   },
-  captureTitle: { ...type.h2, color: colors.text },
-  captureCaption: { ...type.body, fontSize: 11, color: colors.secondaryText },
-  captureRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs },
+  resultLabel: { ...type.label, color: colors.secondaryText },
+  resultText: { ...type.body, fontSize: 13, color: colors.text },
+  row: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs },
 });

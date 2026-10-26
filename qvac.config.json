@@ -2,12 +2,11 @@
   "plugins": [
     "@qvac/sdk/llamacpp-completion/plugin",
     "@qvac/sdk/whispercpp-transcription/plugin",
-    "@qvac/sdk/nmtcpp-translation/plugin"
+    "@qvac/sdk/nmtcpp-translation/plugin",
+    "@qvac/sdk/ggml-ocr/plugin"
   ],
   "engines": {
-    "android": [
-      "arm64-v8a"
-    ]
+    "android": ["arm64-v8a"]
   },
   "modelRegistry": {
     "maxRecommendedSizeBytes": 3221225472
