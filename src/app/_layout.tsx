@@ -1,50 +1,55 @@
-import { useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
-import { Audio } from 'expo-av';
-import { getDatabase } from '../core/db/database';
+import { Bungee_400Regular } from '@expo-google-fonts/bungee';
+import {
+  Quicksand_400Regular,
+  Quicksand_500Medium,
+  Quicksand_600SemiBold,
+  Quicksand_700Bold,
+  useFonts,
+} from '@expo-google-fonts/quicksand';
+import { Stack } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { colors } from '../theme/tokens';
 
 export default function RootLayout() {
-  const router = useRouter();
-  const [booting, setBooting] = useState(true);
+  const [loaded, error] = useFonts({
+    Bungee_400Regular,
+    Quicksand_400Regular,
+    Quicksand_500Medium,
+    Quicksand_600SemiBold,
+    Quicksand_700Bold,
+  });
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        await getDatabase();
-        await Audio.requestPermissionsAsync();
-        if (!cancelled) router.replace('/onboarding/permissions');
-      } catch (e) {
-        console.error('Bootstrap permission error', e);
-      } finally {
-        if (!cancelled) setBooting(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [router]);
+  if (!loaded && !error) {
+    return (
+      <View style={styles.splash}>
+        <ActivityIndicator color={colors.red} />
+      </View>
+    );
+  }
 
   return (
-    <>
-      <Stack screenOptions={{ headerShown: false }} />
-      {booting && (
-        <View
-          style={{
-            position: 'absolute',
-            top: 0,
-            right: 0,
-            bottom: 0,
-            left: 0,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: '#fff',
-          }}>
-          <Text>Starting Ndimi Swahili...</Text>
-        </View>
-      )}
-    </>
+    <SafeAreaProvider>
+      <StatusBar style="dark" />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.background },
+        }}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="onboarding" />
+        <Stack.Screen name="(tabs)" />
+      </Stack>
+    </SafeAreaProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  splash: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.background,
+  },
+});

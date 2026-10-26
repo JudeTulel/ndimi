@@ -179,18 +179,19 @@ async function verifyAndInstall(model: CatalogModel): Promise<void> {
     setState(model.id, { status: 'failed', message: 'Downloaded file is missing.' });
     return;
   }
-  if (typeof info.size === 'number' && info.size !== model.sizeBytes) {
+  const size = info.size;
+  if (typeof size === 'number' && size !== model.sizeBytes) {
     await FileSystem.deleteAsync(partUri(model), { idempotent: true });
     setState(model.id, {
       status: 'failed',
-      message: `Size mismatch: expected ${model.sizeBytes} bytes, got ${info.size}.`,
+      message: `Size mismatch: expected ${model.sizeBytes} bytes, got ${size}.`,
     });
     return;
   }
 
   const digest = await Crypto.digest(
     Crypto.CryptoDigestAlgorithm.SHA256,
-    await readFileBytes(partUri(model))
+    (await readFileBytes(partUri(model))) as unknown as BufferSource
   );
   const actual = Array.from(new Uint8Array(digest))
     .map((b) => b.toString(16).padStart(2, '0'))
@@ -231,7 +232,7 @@ async function verifyAndInstall(model: CatalogModel): Promise<void> {
 async function readFileBytes(uri: string): Promise<Uint8Array> {
   const chunks: Uint8Array[] = [];
   const info = await FileSystem.getInfoAsync(uri);
-  const total = typeof info.size === 'number' ? info.size : 0;
+  const total = info.exists ? info.size : 0;
   const chunkSize = 4 * 1024 * 1024;
 
   for (let offset = 0; offset < total; offset += chunkSize) {

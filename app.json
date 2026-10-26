@@ -44,7 +44,17 @@
         "expo-sqlite"
       ],
       [
-        "expo-audio"
+        "expo-audio",
+        {
+          "microphonePermission": "Ndimi records speech to translate it on device."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Ndimi uses the camera to capture printed text for translation.",
+          "recordAudioAndroid": false
+        }
       ],
       [
         "@qvac/sdk/expo-plugin",
@@ -52,7 +62,8 @@
           "installMissingPrebuilds": true
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      "expo-font"
     ]
   }
 }
