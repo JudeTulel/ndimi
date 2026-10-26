@@ -16,6 +16,7 @@ import {
 const TASKS: { key: ModelTask; label: string; caption: string }[] = [
   { key: 'asr', label: 'Speech recognition', caption: 'Required for voice translation' },
   { key: 'translation', label: 'Translation', caption: 'Required for all translation' },
+  { key: 'chat', label: 'General chat', caption: 'Optional — conversational assistant' },
 ];
 
 type Props = {

@@ -1,31 +1,60 @@
-import { Image, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { colors } from '../theme/tokens';
 
-const LOGO = require('../../assets/logo.jpg');
-
 /**
- * The Ndimi mark from `assets/logo.jpg`: a flat-topped half-disc, red over green
- * with an olive overlap lens, on black. Rendered as an image so the real artwork
- * is the source of truth rather than a hand-drawn approximation.
+ * The Ndimi mark redrawn in brand colours only: a flat-topped half-disc, red
+ * over dark, with the overlap band in dark. Drawn with plain Views so no asset
+ * colours leak into the palette.
  */
-export function LogoMark({ diameter = 184 }: { diameter?: number }) {
+export function LogoMark({ width = 176 }: { width?: number }) {
+  const height = width * 0.62;
+  const red = height * 0.46;
+  const overlap = height * 0.1;
+
   return (
-    <View
-      style={[
-        styles.frame,
-        { width: diameter, height: diameter, borderRadius: diameter * 0.34 },
-      ]}>
-      <Image source={LOGO} style={styles.image} resizeMode="cover" />
+    <View style={[styles.stage, { width, height: height + 8 }]}>
+      <View
+        style={[
+          styles.disc,
+          {
+            width,
+            height,
+            borderBottomLeftRadius: width / 2,
+            borderBottomRightRadius: width / 2,
+            backgroundColor: colors.dark,
+          },
+        ]}
+      />
+      <View
+        style={[
+          styles.overlay,
+          {
+            width,
+            height: red,
+            borderBottomLeftRadius: width / 2,
+            borderBottomRightRadius: width / 2,
+            backgroundColor: colors.red,
+          },
+        ]}
+      />
+      <View
+        style={[
+          styles.overlay,
+          {
+            width,
+            height: overlap,
+            marginTop: red - overlap / 2,
+            backgroundColor: colors.dark,
+            opacity: 0.9,
+          },
+        ]}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  frame: {
-    overflow: 'hidden',
-    backgroundColor: colors.dark,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  image: { width: '100%', height: '100%' },
+  stage: { justifyContent: 'flex-start' },
+  disc: { position: 'absolute', top: 0, left: 0 },
+  overlay: { position: 'absolute', top: 0, left: 0 },
 });

@@ -1,4 +1,4 @@
-export type ModelTask = 'asr' | 'translation';
+export type ModelTask = 'asr' | 'translation' | 'chat';
 
 export type CatalogModel = {
   /** Curated id, stable across revisions. */
@@ -75,6 +75,22 @@ export const CATALOG: CatalogModel[] = [
     licence: 'Apache-2.0',
     publisher: 'qvac',
     runtimePlugin: 'nmtcpp-translation',
+    languages: ['en', 'sw'],
+    quantization: 'Q4_K_M',
+  },
+  {
+    id: 'llama-3.2-1b-instruct-q4',
+    task: 'chat',
+    title: 'Llama 3.2 1B Instruct',
+    summary: 'General on-device chat and writing help. Independent of translation.',
+    repo: 'bartowski/Llama-3.2-1B-Instruct-GGUF',
+    revision: '067b946cf014b7c697f3654f621d577a3e3afd1c',
+    filename: 'Llama-3.2-1B-Instruct-Q4_K_M.gguf',
+    sizeBytes: 807_694_464,
+    sha256: '6f85a640a97cf2bf5b8e764087b1e83da0fdb51d7c9fab7d0fece9385611df83',
+    licence: 'Llama 3.2 Community',
+    publisher: 'bartowski',
+    runtimePlugin: 'llamacpp-completion',
     languages: ['en', 'sw'],
     quantization: 'Q4_K_M',
   },

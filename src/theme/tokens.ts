@@ -1,30 +1,33 @@
+/**
+ * Strict brand palette — exactly three colours, held regardless of any reference
+ * artwork. Every other token is a neutral or a documented tint of these three.
+ */
 export const colors = {
-  // Brand palette
   sulphur: '#F5ECC2',
   dark: '#111314',
   red: '#FF073A',
 
-  // Surfaces derived from the palette
-  background: '#F8F6EF',
+  // Derived surfaces
+  background: '#F5ECC2',
   surface: '#FFFFFF',
   surfaceMuted: '#F5ECC2',
   text: '#111314',
-  secondaryText: '#5C5F63',
-  border: '#E7E2D2',
-  track: '#E7E2D2',
-  soft: '#FFF1D9',
+  secondaryText: '#4A4A4A',
+  border: '#DCD2B4',
+  track: '#DCD2B4',
+  soft: '#F5ECC2',
 
-  // Logo mark
-  markRed: '#A00000',
-  markGreen: '#0A7A00',
-  markOverlap: '#4A4A00',
+  // Logo mark — only the two brand hues, no extra oxblood/green
+  markRed: '#FF073A',
+  markGreen: '#111314',
+  markOverlap: '#111314',
 
-  // States
-  success: '#0A7A00',
-  successSoft: '#CDE8CD',
+  // States — success reuses dark so the palette stays closed
+  success: '#111314',
+  successSoft: '#DCD2B4',
   danger: '#FF073A',
   accent: '#FF073A',
-  accentSoft: '#FFE3E9',
+  accentSoft: '#F5ECC2',
 };
 
 export const radius = {
