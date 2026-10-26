@@ -40,6 +40,7 @@ export default function RootLayout() {
         <Stack.Screen name="index" />
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="camera" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="translate" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="voice" options={{ animation: 'slide_from_right' }} />
         <Stack.Screen name="history" options={{ animation: 'slide_from_right' }} />

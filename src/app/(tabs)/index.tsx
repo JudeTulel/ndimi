@@ -2,17 +2,18 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { GlassCard } from '../../components/GlassCard';
 import { Screen } from '../../components/Screen';
 import { colors, radius, spacing, type } from '../../theme/tokens';
 import { CATALOG } from '../../features/models/catalog';
 import { subscribe, type ModelStatusMap } from '../../features/models/modelStore';
 import { listHistory, type HistoryEntry } from '../../features/history/historyStore';
 
-const ACTIONS = [
-  { icon: 'camera-outline' as const, title: 'Camera', caption: 'Snap your text.', route: '/translate' },
+const TILES = [
+  { icon: 'camera-outline' as const, title: 'Camera', caption: 'Snap your text.', route: '/camera' },
   { icon: 'mic-outline' as const, title: 'Voice', caption: 'Speak and translate.', route: '/voice' },
-  { icon: 'language-outline' as const, title: 'Translate', caption: 'Type to translate.', route: '/translate' },
-  { icon: 'book-outline' as const, title: 'Phrasebook', caption: 'Saved phrases.', route: '/history' },
+  { icon: 'language-outline' as const, title: 'Translate AI', caption: 'Smart. Fast. Now.', route: '/translate' },
+  { icon: 'scan-outline' as const, title: 'Scan', caption: 'Scan and convert.', route: '/camera' },
 ];
 
 export default function Home() {
@@ -22,13 +23,12 @@ export default function Home() {
 
   useEffect(() => subscribe(setStatus), []);
   useEffect(() => {
-    void listHistory(3).then(setRecent);
+    void listHistory(2).then(setRecent);
   }, []);
 
-  const readyTasks = (['asr', 'translation'] as const).filter((task) =>
-    CATALOG.some((m) => m.task === task && status[m.id]?.status === 'installed')
+  const modelsReady = CATALOG.filter((m) => m.task === 'translation' || m.task === 'asr').every(
+    (m) => status[m.id]?.status === 'installed'
   );
-  const modelsReady = readyTasks.length === 2;
 
   return (
     <Screen footerGap={spacing.sm}>
@@ -42,54 +42,43 @@ export default function Home() {
         </Pressable>
       </View>
 
-      <Pressable style={styles.inputCard} onPress={() => router.push('/translate')}>
-        <Text style={styles.inputPlaceholder}>Write text to translate…</Text>
-        <View style={styles.inputRow}>
+      <GlassCard onPress={() => router.push('/translate')} style={styles.prompt}>
+        <Text style={styles.promptText}>Write text to translate…</Text>
+        <View style={styles.promptRow}>
           <Text style={styles.pair}>English → Swahili</Text>
-          <View style={styles.goChip}>
-            <Ionicons name="arrow-forward" size={14} color="#FFFFFF" />
+          <View style={styles.go}>
+            <Ionicons name="arrow-forward" size={13} color="#FFFFFF" />
           </View>
         </View>
-      </Pressable>
+      </GlassCard>
 
-      <Pressable
-        style={[styles.banner, !modelsReady && styles.bannerWarn]}
-        onPress={() => router.push(modelsReady ? '/onboarding/models' : '/settings/models')}>
-        <View style={styles.bannerIcon}>
-          <Ionicons
-            name={modelsReady ? 'sparkles-outline' : 'cloud-download-outline'}
-            size={18}
-            color={colors.red}
-          />
+      <GlassCard onPress={() => router.push('/settings/models')} style={styles.assistant}>
+        <View style={styles.assistantIcon}>
+          <Ionicons name={modelsReady ? 'sparkles' : 'cloud-download-outline'} size={18} color={colors.red} />
         </View>
-        <View style={styles.bannerText}>
-          <Text style={styles.bannerTitle}>
-            {modelsReady ? 'Models ready · offline' : 'Finish model setup'}
+        <View style={styles.assistantText}>
+          <Text style={styles.assistantTitle}>
+            {modelsReady ? 'Help Assistant AI' : 'Finish model setup'}
           </Text>
-          <Text style={styles.bannerCaption}>
-            {modelsReady
-              ? 'Everything runs on this phone.'
-              : 'Install a speech and translation model to start.'}
+          <Text style={styles.assistantCaption}>
+            {modelsReady ? 'Get help instantly.' : 'Install models to go offline.'}
           </Text>
         </View>
-        <Ionicons name="chevron-forward" size={16} color={colors.secondaryText} />
-      </Pressable>
+        <Ionicons name="arrow-up-outline" size={16} color={colors.text} style={styles.diag} />
+      </GlassCard>
 
       <View style={styles.grid}>
-        {ACTIONS.map((action) => (
-          <Pressable
-            key={action.title}
-            style={({ pressed }) => [styles.tile, pressed && styles.pressed]}
-            onPress={() => router.push(action.route as never)}>
+        {TILES.map((tile) => (
+          <GlassCard key={tile.title} onPress={() => router.push(tile.route as never)} style={styles.tile}>
             <View style={styles.tileTop}>
               <View style={styles.tileIcon}>
-                <Ionicons name={action.icon} size={20} color={colors.red} />
+                <Ionicons name={tile.icon} size={18} color={colors.red} />
               </View>
-              <Ionicons name="arrow-up-outline" size={16} color={colors.dark} style={styles.diag} />
+              <Ionicons name="arrow-up-outline" size={15} color={colors.text} style={styles.diag} />
             </View>
-            <Text style={styles.tileTitle}>{action.title}</Text>
-            <Text style={styles.tileCaption}>{action.caption}</Text>
-          </Pressable>
+            <Text style={styles.tileTitle}>{tile.title}</Text>
+            <Text style={styles.tileCaption}>{tile.caption}</Text>
+          </GlassCard>
         ))}
       </View>
 
@@ -104,11 +93,11 @@ export default function Home() {
         <Text style={styles.empty}>Nothing translated yet.</Text>
       ) : (
         recent.map((entry) => (
-          <View key={entry.id} style={styles.historyCard}>
+          <GlassCard key={entry.id} radiusSize={radius.input} style={styles.historyRow}>
             <View style={styles.historyIcon}>
               <Ionicons
                 name={entry.inputType === 'voice' ? 'mic-outline' : 'document-text-outline'}
-                size={17}
+                size={16}
                 color={colors.red}
               />
             </View>
@@ -120,7 +109,7 @@ export default function Home() {
                 {entry.translatedText}
               </Text>
             </View>
-          </View>
+          </GlassCard>
         ))
       )}
     </Screen>
@@ -129,28 +118,9 @@ export default function Home() {
 
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    wordmark: { ...type.display, fontSize: 22, color: colors.dark },
   brand: { gap: 1 },
+  wordmark: { ...type.display, color: colors.text },
   brandCaption: { ...type.body, fontSize: 11, color: colors.secondaryText },
-  inputCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    padding: spacing.md,
-    gap: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  inputPlaceholder: { ...type.body, fontSize: 14, color: colors.secondaryText },
-  inputRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  pair: { ...type.label, color: colors.dark },
-  goChip: {
-    width: 26,
-    height: 26,
-    borderRadius: radius.badge,
-    backgroundColor: colors.red,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   avatar: {
     width: 32,
     height: 32,
@@ -159,53 +129,43 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-    banner: {
-    flexDirection: 'row',
+  prompt: { gap: spacing.md },
+  promptText: { ...type.body, fontSize: 14, color: colors.secondaryText },
+  promptRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  pair: { ...type.label, color: colors.text },
+  go: {
+    width: 26,
+    height: 26,
+    borderRadius: radius.badge,
+    backgroundColor: colors.red,
     alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    padding: spacing.sm + 4,
-    borderWidth: 1,
-    borderColor: colors.border,
+    justifyContent: 'center',
   },
-  bannerWarn: { backgroundColor: colors.sulphur },
-  bannerIcon: {
+  assistant: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  assistantIcon: {
     width: 36,
     height: 36,
     borderRadius: radius.badge,
-    backgroundColor: colors.sulphur,
+    backgroundColor: colors.surfaceRaised,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  bannerText: { flex: 1, gap: 1 },
-  bannerTitle: { ...type.cardTitle, color: colors.dark },
-  bannerCaption: { ...type.body, fontSize: 11, color: colors.secondaryText },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm + 4 },
-  tile: {
-    width: '47.5%',
-    flexGrow: 1,
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
-    gap: spacing.xs,
-  },
-  pressed: { opacity: 0.85 },
+  assistantText: { flex: 1, gap: 1 },
+  assistantTitle: { ...type.cardTitle, color: colors.text },
+  assistantCaption: { ...type.body, fontSize: 11, color: colors.secondaryText },
+  diag: { transform: [{ rotate: '45deg' }] },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm + 2 },
+  tile: { width: '47.5%', flexGrow: 1, gap: spacing.xs },
   tileTop: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.sm },
   tileIcon: {
-    width: 38,
-    height: 38,
+    width: 36,
+    height: 36,
     borderRadius: radius.badge,
-    backgroundColor: colors.sulphur,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: colors.surfaceRaised,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  diag: { transform: [{ rotate: '45deg' }] },
-  tileTitle: { ...type.cardTitle, color: colors.dark },
+  tileTitle: { ...type.cardTitle, color: colors.text },
   tileCaption: { ...type.body, fontSize: 11, color: colors.secondaryText },
   historyHead: {
     flexDirection: 'row',
@@ -213,28 +173,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginTop: spacing.sm,
   },
-  sectionTitle: { ...type.h2, color: colors.dark },
+  sectionTitle: { ...type.h2, color: colors.text },
   seeAll: { ...type.label, color: colors.red },
   empty: { ...type.body, color: colors.secondaryText },
-  historyCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.surface,
-    borderRadius: radius.input,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.sm + 4,
-  },
+  historyRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.sm + 4 },
   historyIcon: {
-    width: 34,
-    height: 34,
+    width: 32,
+    height: 32,
     borderRadius: radius.badge,
-    backgroundColor: colors.sulphur,
+    backgroundColor: colors.surfaceRaised,
     alignItems: 'center',
     justifyContent: 'center',
   },
   historyText: { flex: 1, gap: 1 },
-  historySource: { ...type.body, fontSize: 12, color: colors.dark },
+  historySource: { ...type.body, fontSize: 12, color: colors.text },
   historyResult: { ...type.body, fontSize: 11, color: colors.secondaryText },
 });

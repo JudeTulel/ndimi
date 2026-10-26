@@ -118,7 +118,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: radius.badge,
-    backgroundColor: colors.soft,
+    backgroundColor: colors.surfaceRaised,
     alignItems: 'center',
     justifyContent: 'center',
   },

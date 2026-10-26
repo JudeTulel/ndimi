@@ -1,5 +1,5 @@
-import { Pressable, StyleSheet, Text } from 'react-native';
-import { colors, radius, spacing, type } from '../theme/tokens';
+import { Pressable, StyleSheet, Text, type StyleProp, type ViewStyle } from 'react-native';
+import { colors, radius, spacing, surfaceTheme, type } from '../theme/tokens';
 
 type Props = {
   label: string;
@@ -8,9 +8,10 @@ type Props = {
   variant?: 'primary' | 'ghost';
   trailing?: string;
   compact?: boolean;
+  style?: StyleProp<ViewStyle>;
 };
 
-/** Pill CTA. Disabled state uses the reference's grey fill. */
+/** Pill CTA — solid red for primary, frosted pane for ghost. */
 export function PrimaryButton({
   label,
   onPress,
@@ -18,6 +19,7 @@ export function PrimaryButton({
   variant = 'primary',
   trailing,
   compact,
+  style,
 }: Props) {
   const ghost = variant === 'ghost';
   return (
@@ -29,11 +31,13 @@ export function PrimaryButton({
       style={({ pressed }) => [
         styles.base,
         compact && styles.compact,
+        surfaceTheme.shadow,
         ghost ? styles.ghost : styles.primary,
         disabled && styles.disabled,
         pressed && !disabled && styles.pressed,
+        style,
       ]}>
-      <Text style={[styles.label, compact && styles.compactLabel, disabled && styles.disabledLabel]}>
+      <Text style={[styles.label, compact && styles.compactLabel, ghost && styles.ghostLabel, disabled && styles.disabledLabel]}>
         {label}
         {trailing ? ` ${trailing}` : ''}
       </Text>
@@ -48,33 +52,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.lg,
+    borderWidth: 1,
   },
-  compact: {
-    height: 34,
-    borderRadius: 10,
-    paddingHorizontal: spacing.md,
-    minWidth: 76,
-  },
-  primary: {
-    backgroundColor: colors.red,
-  },
-  ghost: {
-    backgroundColor: 'transparent',
-  },
-  disabled: {
-    backgroundColor: colors.track,
-  },
-  pressed: {
-    opacity: 0.85,
-  },
-  label: {
-    ...type.cta,
-    color: '#FFFFFF',
-  },
-  compactLabel: {
-    fontSize: 12,
-  },
-  disabledLabel: {
-    color: '#FBFBFD',
-  },
+  compact: { height: 34, borderRadius: radius.pill, paddingHorizontal: spacing.md, minWidth: 78 },
+  primary: { backgroundColor: colors.red, borderColor: 'rgba(255,255,255,0.4)' },
+  ghost: { backgroundColor: colors.surfaceRaised, borderColor: colors.border },
+  disabled: { backgroundColor: colors.surface, borderColor: colors.border },
+  pressed: { opacity: 0.86 },
+  label: { ...type.cta, color: '#FFFFFF' },
+  compactLabel: { fontSize: 12 },
+  ghostLabel: { color: colors.text },
+  disabledLabel: { color: colors.secondaryText },
 });

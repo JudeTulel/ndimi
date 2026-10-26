@@ -1,4 +1,4 @@
-export type ModelTask = 'asr' | 'translation' | 'chat';
+export type ModelTask = 'asr' | 'translation' | 'chat' | 'ocr';
 
 export type CatalogModel = {
   /** Curated id, stable across revisions. */
@@ -93,6 +93,38 @@ export const CATALOG: CatalogModel[] = [
     runtimePlugin: 'llamacpp-completion',
     languages: ['en', 'sw'],
     quantization: 'Q4_K_M',
+  },
+  {
+    id: 'glm-ocr-q8',
+    task: 'ocr',
+    title: 'GLM-OCR',
+    summary: 'Reads printed text from a photo so it can be translated. Needs its vision projector.',
+    repo: 'ggml-org/GLM-OCR-GGUF',
+    revision: '65a42de1148dbed2297e922b5dbc7d9b70c36578',
+    filename: 'GLM-OCR-Q8_0.gguf',
+    sizeBytes: 950_433_408,
+    sha256: '45bc244a6446aff850521dc41f18bc8d7105ad5f0c2c8c28af04e7cc4f4d50b1',
+    licence: 'MIT',
+    publisher: 'ggml-org',
+    runtimePlugin: 'ggml-ocr',
+    languages: ['en', 'sw'],
+    quantization: 'Q8_0',
+  },
+  {
+    id: 'glm-ocr-mmproj-q8',
+    task: 'ocr',
+    title: 'GLM-OCR vision projector',
+    summary: 'Companion file for GLM-OCR. Install alongside it or the camera cannot read images.',
+    repo: 'ggml-org/GLM-OCR-GGUF',
+    revision: '65a42de1148dbed2297e922b5dbc7d9b70c36578',
+    filename: 'mmproj-GLM-OCR-Q8_0.gguf',
+    sizeBytes: 484_403_648,
+    sha256: '9c4b58e33e316ed142eb5dcb41abec3844d3e6e5dc361ffb782c3fa9d175141f',
+    licence: 'MIT',
+    publisher: 'ggml-org',
+    runtimePlugin: 'ggml-ocr',
+    languages: ['*'],
+    quantization: 'Q8_0',
   },
 ];
 

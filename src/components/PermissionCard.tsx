@@ -54,7 +54,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.badge,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.soft,
+    backgroundColor: colors.surfaceRaised,
   },
   badgeDone: {
     backgroundColor: colors.successSoft,

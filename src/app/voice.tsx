@@ -1,16 +1,23 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import {
+  getRecordingPermissionsAsync,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+} from 'expo-audio';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { CircleButton } from '../components/CircleButton';
+import { GlassCard } from '../components/GlassCard';
+import { PrimaryButton } from '../components/PrimaryButton';
 import { Screen } from '../components/Screen';
-import { colors, radius, spacing, type } from '../theme/tokens';
+import { VoiceWaveform } from '../components/Visuals';
+import { colors, spacing, type } from '../theme/tokens';
 import { CATALOG } from '../features/models/catalog';
 import { subscribe, type ModelStatusMap } from '../features/models/modelStore';
 import { saveTranslation } from '../features/history/historyStore';
 
-type Phase = 'idle' | 'listening' | 'transcribing' | 'done';
-
-const BAR_HEIGHTS = [10, 22, 34, 46, 34, 22, 10];
+type Phase = 'idle' | 'listening' | 'processing' | 'result' | 'denied';
 
 export default function Voice() {
   const router = useRouter();
@@ -20,7 +27,12 @@ export default function Voice() {
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => subscribe(setStatus), []);
-  useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
+  useEffect(() => () => clear(), []);
+
+  const clear = () => {
+    if (timer.current) clearInterval(timer.current);
+    timer.current = null;
+  };
 
   const asr = useMemo(
     () => CATALOG.find((m) => m.task === 'asr' && status[m.id]?.status === 'installed'),
@@ -32,22 +44,29 @@ export default function Voice() {
   );
   const ready = !!asr && !!nmt;
 
-  const start = () => {
+  const start = async () => {
+    const existing = await getRecordingPermissionsAsync();
+    let granted = existing.granted;
+    if (!granted) granted = (await requestRecordingPermissionsAsync()).granted;
+    if (!granted) {
+      setPhase('denied');
+      return;
+    }
+    await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
     setPhase('listening');
     setSeconds(0);
     timer.current = setInterval(() => setSeconds((s) => s + 1), 1000);
   };
 
-  const finish = async () => {
-    if (timer.current) clearInterval(timer.current);
-    setPhase('transcribing');
-    // Capture/ASR adapters land next; simulate the two pipeline stages so the
-    // state machine and History write are exercised end to end.
+  const confirm = async () => {
+    clear();
+    setPhase('processing');
+    // Capture/ASR adapters land next; hold the two pipeline stages so the state
+    // machine and the History write are exercised end to end.
     setTimeout(async () => {
-      const transcript = 'Habari, unaitwa nani?';
       await saveTranslation(
         {
-          sourceText: transcript,
+          sourceText: 'Habari, unaitwa nani?',
           translatedText: 'Hello, what is your name?',
           sourceLanguage: 'sw',
           targetLanguage: 'en',
@@ -55,88 +74,101 @@ export default function Voice() {
         'voice',
         nmt?.id
       );
-      setPhase('done');
-    }, 900);
+      setPhase('result');
+    }, 1000);
   };
 
-  const reset = () => {
-    if (timer.current) clearInterval(timer.current);
-    setPhase('idle');
+  const cancel = () => {
+    clear();
     setSeconds(0);
+    setPhase('idle');
   };
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen fixed contentStyle={styles.content}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={10}>
-          <Ionicons name="chevron-back" size={22} color={colors.dark} />
-        </Pressable>
+        <CircleButton onPress={() => router.back()} accessibilityLabel="Back">
+          <Ionicons name="chevron-back" size={20} color={colors.text} />
+        </CircleButton>
         <Text style={styles.title}>Voice Chat</Text>
-        <View style={styles.spacerIcon} />
+        <CircleButton onPress={() => router.push('/settings/models')} accessibilityLabel="Settings">
+          <Ionicons name="ellipsis-horizontal" size={18} color={colors.text} />
+        </CircleButton>
       </View>
 
-      <Text style={styles.label}>Swahili → English</Text>
-
-      <Text style={styles.state}>
+      <Text style={styles.status}>
         {phase === 'listening'
           ? 'Listening…'
-          : phase === 'transcribing'
+          : phase === 'processing'
             ? 'Transcribing and translating…'
-            : phase === 'done'
-              ? 'Done'
-              : 'Tap the microphone to begin'}
+            : phase === 'result'
+              ? 'Translated'
+              : 'Swahili → English'}
       </Text>
 
-      <View style={styles.wave}>
-        {BAR_HEIGHTS.map((h, i) => (
-          <View
-            key={i}
-            style={[
-              styles.bar,
-              { height: phase === 'listening' ? h : h * 0.45 },
-              phase === 'listening' && styles.barActive,
-            ]}
-          />
-        ))}
+      <VoiceWaveform active={phase === 'listening'} />
+
+      <View style={styles.copy}>
+        <Text style={styles.hero}>
+          Talk freely <Text style={styles.ai}>AI</Text> translates instantly across languages
+        </Text>
+        <Text style={styles.sub}>Speak naturally and let the translator handle the rest.</Text>
       </View>
 
-      {phase === 'done' ? (
-        <View style={styles.resultCard}>
+      {phase === 'result' ? (
+        <GlassCard style={styles.result}>
           <Text style={styles.resultLabel}>SWAHILI</Text>
           <Text style={styles.resultText}>Habari, unaitwa nani?</Text>
           <Text style={styles.resultLabel}>ENGLISH</Text>
           <Text style={styles.resultText}>Hello, what is your name?</Text>
-        </View>
+        </GlassCard>
+      ) : null}
+
+      {phase === 'denied' ? (
+        <GlassCard style={styles.result}>
+          <Text style={styles.resultLabel}>MICROPHONE BLOCKED</Text>
+          <Text style={styles.resultText}>
+            Enable microphone access in Settings › Apps › Ndimi › Permissions, then try again.
+          </Text>
+        </GlassCard>
       ) : null}
 
       <View style={styles.controls}>
         {phase === 'listening' ? (
           <>
-            <Pressable style={styles.sideBtn} onPress={reset}>
-              <Ionicons name="close" size={22} color={colors.dark} />
-            </Pressable>
+            <CircleButton size={50} onPress={cancel} accessibilityLabel="Cancel">
+              <Ionicons name="close" size={20} color={colors.text} />
+            </CircleButton>
             <View style={styles.micWrap}>
-              <Pressable style={styles.mic} onPress={finish}>
-                <Ionicons name="checkmark" size={30} color="#FFFFFF" />
-              </Pressable>
+              <CircleButton size={74} tone="solid" onPress={confirm} accessibilityLabel="Finish">
+                <Ionicons name="checkmark" size={28} color="#FFFFFF" />
+              </CircleButton>
               <Text style={styles.timer}>{format(seconds)}</Text>
             </View>
-            <View style={styles.sideBtnGhost} />
+            <View style={{ width: 50 }} />
           </>
-        ) : phase === 'done' ? (
-          <Pressable style={styles.wideBtn} onPress={reset}>
-            <Ionicons name="refresh-outline" size={18} color={colors.red} />
-            <Text style={styles.wideText}>Record again</Text>
-          </Pressable>
+        ) : phase === 'result' || phase === 'denied' ? (
+          <PrimaryButton
+            label="Record again"
+            variant="ghost"
+            onPress={() => {
+              cancel();
+              void start();
+            }}
+          />
         ) : (
           <View style={styles.micWrap}>
-            <Pressable
-              style={[styles.mic, !ready && styles.micDisabled]}
-              disabled={!ready || phase === 'transcribing'}
-              onPress={start}>
-              <Ionicons name="mic" size={30} color="#FFFFFF" />
-            </Pressable>
-            {!ready ? <Text style={styles.hint}>Install a speech and translation model first.</Text> : null}
+            <CircleButton
+              size={74}
+              tone="solid"
+              disabled={!ready || phase === 'processing'}
+              onPress={start}
+              accessibilityLabel="Start recording">
+              <Ionicons name="mic" size={28} color="#FFFFFF" />
+            </CircleButton>
+            {!ready ? (
+              <Text style={styles.hint}>Install a speech and translation model first.</Text>
+            ) : null}
           </View>
         )}
       </View>
@@ -153,61 +185,17 @@ function format(total: number) {
 const styles = StyleSheet.create({
   content: { justifyContent: 'space-between' },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  title: { ...type.h1, color: colors.dark },
-  spacerIcon: { width: 22 },
-  label: { ...type.label, color: colors.secondaryText, textAlign: 'center' },
-  state: { ...type.h1, fontSize: 21, color: colors.dark, textAlign: 'center' },
-  wave: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    height: 60,
-  },
-  bar: { width: 12, borderRadius: radius.pill, backgroundColor: colors.track },
-  barActive: { backgroundColor: colors.red },
-  resultCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
-    gap: spacing.xs,
-  },
+  title: { ...type.h1, color: colors.text },
+  status: { ...type.label, color: colors.secondaryText, textAlign: 'center' },
+  copy: { alignItems: 'center', gap: spacing.sm },
+  hero: { ...type.hero, color: colors.text, textAlign: 'center' },
+  ai: { color: colors.red },
+  sub: { ...type.body, color: colors.secondaryText, textAlign: 'center' },
+  result: { gap: spacing.xs },
   resultLabel: { ...type.label, color: colors.secondaryText },
-  resultText: { ...type.body, fontSize: 14, color: colors.dark },
-  controls: { alignItems: 'center', gap: spacing.sm },
+  resultText: { ...type.body, fontSize: 14, color: colors.text },
+  controls: { alignItems: 'center', gap: spacing.sm, paddingBottom: spacing.sm },
   micWrap: { alignItems: 'center', gap: spacing.sm },
-  mic: {
-    width: 76,
-    height: 76,
-    borderRadius: radius.card,
-    backgroundColor: colors.red,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  micDisabled: { backgroundColor: colors.track },
   timer: { ...type.label, color: colors.secondaryText },
   hint: { ...type.body, fontSize: 11, color: colors.secondaryText, textAlign: 'center' },
-  sideBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sideBtnGhost: { width: 52 },
-  wideBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.sulphur,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm + 4,
-  },
-  wideText: { ...type.cardTitle, color: colors.red },
 });
