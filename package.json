@@ -20,7 +20,6 @@
     "expo-build-properties": "~1.0.10",
     "expo-device": "~8.0.10",
     "expo-file-system": "~19.0.24",
-    "expo-permissions": "~14.0.0",
     "expo-router": "~6.0.0",
     "expo-sqlite": "~16.0.10",
     "expo-status-bar": "~3.0.9",
