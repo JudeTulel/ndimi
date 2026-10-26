@@ -30,7 +30,7 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      ["expo-build-properties", { "android": { "minSdkVersion": 29 } }],
+      ["expo-build-properties", { "android": { "minSdkVersion": 29, "ndkVersion": "27.0.12077973" } }],
       ["expo-router"],
       ["expo-sqlite"],
       ["expo-audio"],
