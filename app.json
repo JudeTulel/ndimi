@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "ndimi",
+    "name": "Ndimi Swahili",
     "slug": "ndimi",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -13,7 +13,8 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ndimi.swahili"
     },
     "android": {
       "adaptiveIcon": {
@@ -22,13 +23,17 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.ndimi"
+      "package": "com.ndimi.swahili",
+      "minSdkVersion": 29
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       ["expo-build-properties", { "android": { "minSdkVersion": 29 } }],
+      ["expo-router"],
+      ["expo-sqlite"],
+      ["expo-audio"],
       ["@qvac/sdk/expo-plugin", { "installMissingPrebuilds": true }]
     ]
   }
