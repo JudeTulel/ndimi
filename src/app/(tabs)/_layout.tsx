@@ -13,7 +13,10 @@ export default function TabsLayout() {
         tabBarActiveTintColor: colors.red,
         tabBarInactiveTintColor: colors.secondaryText,
         tabBarStyle: {
-          backgroundColor: colors.surface,
+          // Cream, not white: edge-to-edge leaves the system navigation bar
+          // transparent, and it paints white glyphs — on a white tab bar they
+          // vanish entirely.
+          backgroundColor: colors.background,
           borderTopColor: colors.border,
           height: 58 + insets.bottom,
           paddingBottom: insets.bottom + 6,

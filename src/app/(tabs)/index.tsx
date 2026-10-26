@@ -12,7 +12,7 @@ const ACTIONS = [
   { icon: 'camera-outline' as const, title: 'Camera', caption: 'Snap your text.', route: '/translate' },
   { icon: 'mic-outline' as const, title: 'Voice', caption: 'Speak and translate.', route: '/voice' },
   { icon: 'language-outline' as const, title: 'Translate', caption: 'Type to translate.', route: '/translate' },
-  { icon: 'scan-outline' as const, title: 'History', caption: 'Past translations.', route: '/history' },
+  { icon: 'book-outline' as const, title: 'Phrasebook', caption: 'Saved phrases.', route: '/history' },
 ];
 
 export default function Home() {
@@ -33,9 +33,12 @@ export default function Home() {
   return (
     <Screen footerGap={spacing.sm}>
       <View style={styles.header}>
-        <Text style={styles.wordmark}>Ndimi</Text>
-        <Pressable onPress={() => router.push('/(tabs)/profile')} hitSlop={10}>
-          <Ionicons name="person-circle-outline" size={26} color={colors.dark} />
+        <View style={styles.brand}>
+          <Text style={styles.wordmark}>Ndimi</Text>
+          <Text style={styles.brandCaption}>English ↔ Swahili</Text>
+        </View>
+        <Pressable onPress={() => router.push('/(tabs)/profile')} hitSlop={10} style={styles.avatar}>
+          <Ionicons name="person-outline" size={16} color={colors.sulphur} />
         </Pressable>
       </View>
 
@@ -43,7 +46,9 @@ export default function Home() {
         <Text style={styles.inputPlaceholder}>Write text to translate…</Text>
         <View style={styles.inputRow}>
           <Text style={styles.pair}>English → Swahili</Text>
-          <Ionicons name="arrow-forward" size={15} color={colors.red} />
+          <View style={styles.goChip}>
+            <Ionicons name="arrow-forward" size={14} color="#FFFFFF" />
+          </View>
         </View>
       </Pressable>
 
@@ -124,7 +129,9 @@ export default function Home() {
 
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  wordmark: { ...type.display, fontSize: 30, color: colors.dark },
+    wordmark: { ...type.display, fontSize: 22, color: colors.dark },
+  brand: { gap: 1 },
+  brandCaption: { ...type.body, fontSize: 11, color: colors.secondaryText },
   inputCard: {
     backgroundColor: colors.surface,
     borderRadius: radius.card,
@@ -136,7 +143,23 @@ const styles = StyleSheet.create({
   inputPlaceholder: { ...type.body, fontSize: 14, color: colors.secondaryText },
   inputRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   pair: { ...type.label, color: colors.dark },
-  banner: {
+  goChip: {
+    width: 26,
+    height: 26,
+    borderRadius: radius.badge,
+    backgroundColor: colors.red,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatar: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.badge,
+    backgroundColor: colors.dark,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+    banner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
@@ -176,6 +199,8 @@ const styles = StyleSheet.create({
     height: 38,
     borderRadius: radius.badge,
     backgroundColor: colors.sulphur,
+    borderWidth: 1,
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -189,7 +214,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   sectionTitle: { ...type.h2, color: colors.dark },
-  seeAll: { ...type.body, fontSize: 12, color: colors.secondaryText },
+  seeAll: { ...type.label, color: colors.red },
   empty: { ...type.body, color: colors.secondaryText },
   historyCard: {
     flexDirection: 'row',
