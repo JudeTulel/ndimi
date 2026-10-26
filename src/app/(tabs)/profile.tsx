@@ -1,9 +1,9 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { PrimaryButton } from '../../components/PrimaryButton';
-import { colors, spacing, type } from '../../theme/tokens';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Screen } from '../../components/Screen';
+import { colors, radius, spacing, type } from '../../theme/tokens';
 import { CATALOG, formatBytes } from '../../features/models/catalog';
 import { subscribe, type ModelStatusMap } from '../../features/models/modelStore';
 
@@ -13,54 +13,116 @@ export default function Profile() {
 
   useEffect(() => subscribe(setStatus), []);
 
-  const installed = useMemo(
-    () => CATALOG.filter((model) => status[model.id]?.status === 'installed'),
+  const counts = useMemo(() => {
+    const values = CATALOG.map((model) => status[model.id]?.status ?? 'absent');
+    return {
+      installed: values.filter((v) => v === 'installed').length,
+      downloading: values.filter((v) => v === 'downloading').length,
+      failed: values.filter((v) => v === 'failed').length,
+    };
+  }, [status]);
+
+  const bytes = useMemo(
+    () =>
+      CATALOG.filter((model) => status[model.id]?.status === 'installed').reduce(
+        (sum, model) => sum + model.sizeBytes,
+        0
+      ),
     [status]
   );
-  const bytes = installed.reduce((sum, model) => sum + model.sizeBytes, 0);
+
+  const modelSummary =
+    counts.downloading > 0
+      ? `${counts.downloading} downloading · ${counts.installed} installed`
+      : counts.installed > 0
+        ? `${counts.installed} installed · ${formatBytes(bytes)}`
+        : 'No models installed';
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.title}>Profile</Text>
+    <Screen>
+      <Text style={styles.title}>Profile</Text>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Installed models</Text>
-          {installed.length === 0 ? (
-            <Text style={styles.muted}>No models installed yet.</Text>
-          ) : (
-            installed.map((model) => (
-              <View key={model.id} style={styles.row}>
-                <Text style={styles.rowText}>{model.title}</Text>
-                <Text style={styles.muted}>{formatBytes(model.sizeBytes)}</Text>
-              </View>
-            ))
-          )}
-          {installed.length > 0 ? (
-            <Text style={styles.muted}>Total {formatBytes(bytes)}</Text>
-          ) : null}
-        </View>
+      <View style={styles.card}>
+        <Text style={styles.cardLabel}>MODELS</Text>
+        <Text style={styles.cardValue}>{modelSummary}</Text>
+        {counts.failed > 0 ? (
+          <Text style={styles.warn}>{counts.failed} need attention — open Settings to retry.</Text>
+        ) : null}
+      </View>
 
-        <PrimaryButton label="Manage models" onPress={() => router.push('/onboarding/models')} />
-      </ScrollView>
-    </SafeAreaView>
+      <Text style={styles.section}>Settings</Text>
+
+      <SettingRow
+        icon="cube-outline"
+        title="Models"
+        caption="Download, retry or remove translation and speech models"
+        onPress={() => router.push('/settings/models')}
+      />
+    </Screen>
+  );
+}
+
+function SettingRow({
+  icon,
+  title,
+  caption,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  caption: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+      onPress={onPress}>
+      <View style={styles.rowIcon}>
+        <Ionicons name={icon} size={20} color={colors.red} />
+      </View>
+      <View style={styles.rowText}>
+        <Text style={styles.rowTitle}>{title}</Text>
+        <Text style={styles.rowCaption}>{caption}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={colors.secondaryText} />
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.lg, gap: spacing.md },
   title: { ...type.h1, color: colors.text },
   card: {
     backgroundColor: colors.surface,
-    borderRadius: 18,
+    borderRadius: radius.input,
     padding: spacing.md,
-    gap: spacing.sm,
+    gap: spacing.xs,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  cardTitle: { ...type.cardTitle, color: colors.text },
-  row: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm },
-  rowText: { ...type.body, color: colors.text, flex: 1 },
-  muted: { ...type.body, fontSize: 11, color: colors.secondaryText },
+  cardLabel: { ...type.label, color: colors.secondaryText },
+  cardValue: { ...type.cardTitle, color: colors.text },
+  warn: { ...type.body, fontSize: 11, color: colors.danger },
+  section: { ...type.label, color: colors.secondaryText, marginTop: spacing.sm },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.input,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+  },
+  rowPressed: { opacity: 0.85 },
+  rowIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.badge,
+    backgroundColor: colors.soft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowText: { flex: 1, gap: 2 },
+  rowTitle: { ...type.cardTitle, color: colors.text },
+  rowCaption: { ...type.body, fontSize: 11, color: colors.secondaryText },
 });

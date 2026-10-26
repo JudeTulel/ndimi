@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getDatabase } from '../core/db/database';
 import { getPref, ONBOARDING_COMPLETE } from '../core/db/preferences';
 import { hydrate } from '../features/models/modelStore';
@@ -12,6 +13,7 @@ import { colors, spacing, type } from '../theme/tokens';
  */
 export default function Boot() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     let cancelled = false;
@@ -33,7 +35,7 @@ export default function Boot() {
   }, [router]);
 
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, { paddingBottom: insets.bottom }]}>
       <Text style={styles.wordmark}>Ndimi</Text>
       <ActivityIndicator color={colors.red} />
       <Text style={styles.caption}>Starting Ndimi Swahili…</Text>

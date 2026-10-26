@@ -68,12 +68,13 @@ const styles = StyleSheet.create({
     ...type.label,
     flex: 1,
     textAlign: 'center',
-    color: colors.track,
+    color: colors.secondaryText,
   },
   labelActive: {
     color: colors.red,
   },
   labelDone: {
-    color: colors.sulphur,
+    color: colors.red,
+    opacity: 0.55,
   },
 });

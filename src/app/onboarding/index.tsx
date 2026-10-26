@@ -1,11 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StyleSheet, Text, View } from 'react-native';
 import { LogoMark } from '../../components/LogoMark';
 import { PrimaryButton } from '../../components/PrimaryButton';
+import { Screen } from '../../components/Screen';
 import { StepIndicator } from '../../components/StepIndicator';
-import { colors, radius, spacing, type } from '../../theme/tokens';
+import { colors, fonts, radius, spacing, type } from '../../theme/tokens';
 
 const FEATURES = [
   {
@@ -24,69 +24,56 @@ export default function Welcome() {
   const router = useRouter();
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <StepIndicator current={0} />
+    <Screen>
+      <StepIndicator current={0} />
 
-        <View style={styles.hero}>
-          <LogoMark />
-        </View>
+      <View style={styles.hero}>
+        <LogoMark />
+      </View>
 
-        <View style={styles.wordmarkWrap}>
-          <Text style={styles.wordmark}>Ndimi</Text>
-          <Text style={styles.tagline}>Your local language translator</Text>
-        </View>
+      <View style={styles.wordmarkWrap}>
+        <Text style={styles.wordmark}>Ndimi</Text>
+        <Text style={styles.tagline}>Your local language translator</Text>
+      </View>
 
-        <View style={styles.cards}>
-          {FEATURES.map((feature) => (
-            <View key={feature.title} style={styles.card}>
-              <View style={styles.cardRow}>
-                <View style={styles.badge}>
-                  <Ionicons name={feature.icon} size={20} color={colors.red} />
-                </View>
-                <Text style={styles.cardTitle}>{feature.title}</Text>
+      <View style={styles.cards}>
+        {FEATURES.map((feature) => (
+          <View key={feature.title} style={styles.card}>
+            <View style={styles.cardRow}>
+              <View style={styles.badge}>
+                <Ionicons name={feature.icon} size={20} color={colors.red} />
               </View>
-              <Text style={styles.cardBody}>{feature.body}</Text>
+              <Text style={styles.cardTitle}>{feature.title}</Text>
             </View>
-          ))}
-        </View>
+            <Text style={styles.cardBody}>{feature.body}</Text>
+          </View>
+        ))}
+      </View>
 
-        <View style={styles.spacer} />
+      <View style={styles.spacer} />
 
-        <PrimaryButton
-          label="Get Started"
-          trailing="→"
-          onPress={() => router.push('/onboarding/permissions')}
-        />
-      </ScrollView>
-    </SafeAreaView>
+      <PrimaryButton
+        label="Get Started"
+        trailing="→"
+        onPress={() => router.push('/onboarding/permissions')}
+      />
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
-  content: {
-    flexGrow: 1,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.lg,
-    gap: spacing.lg,
-  },
-  hero: { alignItems: 'center', marginTop: spacing.sm },
+  hero: { alignItems: 'center' },
   wordmarkWrap: { alignItems: 'center', gap: spacing.xs },
   wordmark: { ...type.display, color: colors.text },
-  tagline: { ...type.h2, color: colors.text, textAlign: 'center' },
+  tagline: { fontFamily: fonts.medium, fontSize: 15, color: colors.text, textAlign: 'center' },
   cards: { gap: spacing.sm + 4 },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.input,
     padding: spacing.md,
     gap: spacing.sm,
-    shadowColor: '#241B4A',
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   cardRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   badge: {
@@ -98,6 +85,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cardTitle: { ...type.cardTitle, color: colors.text },
-  cardBody: { ...type.body, color: colors.secondaryText },
+  cardBody: { ...type.body, color: colors.secondaryText, paddingLeft: 40 + spacing.sm },
   spacer: { flex: 1, minHeight: spacing.sm },
 });
