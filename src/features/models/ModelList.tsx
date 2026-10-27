@@ -80,6 +80,10 @@ function ModelCard({
           <Text style={styles.cardTitle}>{model.title}</Text>
           <Text style={styles.cardMeta}>
             {model.quantization} · {formatBytes(model.sizeBytes)} · {model.licence}
+            {/* Speech models are language-scoped, so say which before install. */}
+            {model.task === 'asr'
+              ? ` · ${model.languages.map((l) => l.toUpperCase()).join('/')} only`
+              : ''}
           </Text>
         </View>
         <ModelAction model={model} state={state} tooBig={tooBig} />
@@ -177,7 +181,8 @@ const styles = StyleSheet.create({
   groupCaption: {
     ...type.body,
     fontSize: 11,
-    color: colors.secondaryText,
+    // Green: these are guidance lines, not body copy.
+    color: colors.green,
     paddingHorizontal: spacing.xs,
     marginBottom: spacing.xs,
   },

@@ -8,6 +8,9 @@ export const colors = {
   sulphur: '#F5ECC2',
   dark: '#111314',
   red: '#FF073A',
+  /** Supportive hue: confirmations, links and machine-side labels. */
+  green: '#1F7A5C',
+  greenInk: '#155B44',
 
   // Solid scheme: background is the tone, surfaces are a lighter tone of it.
   background: '#F5ECC2',
@@ -17,20 +20,21 @@ export const colors = {
   secondaryText: '#5E594C',
   border: '#EAE1C3',
 
-  // Tints derived from the two brand hues
+  // Tints derived from the brand hues
   redWash: 'rgba(255,7,58,0.10)',
+  greenWash: 'rgba(31,122,92,0.10)',
   darkWash: 'rgba(17,19,20,0.06)',
   sulphurWash: 'rgba(245,236,194,0.85)',
 
-  success: '#111314',
-  successSoft: '#EEE6C6',
+  success: '#1F7A5C',
+  successSoft: '#DCEBE1',
   track: '#EAE1C3',
   danger: '#FF073A',
 };
 
 /** Only used by the orb; screens are flat colour. */
 export const gradient = {
-  orb: ['#FFFDF5', '#F5ECC2', '#FF073A', '#F5ECC2', '#FFFDF5'] as const,
+  orb: ['#FFFDF5', '#DCEBE1', '#FF073A', '#1F7A5C', '#FFFDF5'] as const,
 };
 
 export const radius = {

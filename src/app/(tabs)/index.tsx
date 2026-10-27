@@ -45,7 +45,7 @@ export default function Home() {
   const directionLabel = direction === 'sw-en' ? 'Swahili → English' : 'English → Swahili';
 
   return (
-    <Screen footerGap={spacing.sm}>
+    <Screen footerGap={spacing.sm} tabBar={false}>
       <View style={styles.header}>
         <View style={styles.brand}>
           <Text style={styles.wordmark}>Ndimi</Text>
@@ -144,7 +144,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   brand: { gap: 1 },
   wordmark: { ...type.display, color: colors.text },
-  brandCaption: { ...type.body, fontSize: 11, color: colors.secondaryText },
+  brandCaption: { ...type.body, fontSize: 11, color: colors.green },
   avatar: {
     width: 32,
     height: 32,
@@ -176,7 +176,7 @@ const styles = StyleSheet.create({
   },
   assistantText: { flex: 1, gap: 1 },
   assistantTitle: { ...type.cardTitle, color: colors.text },
-  assistantCaption: { ...type.body, fontSize: 11, color: colors.secondaryText },
+  assistantCaption: { ...type.body, fontSize: 11, color: colors.green },
   diag: { transform: [{ rotate: '45deg' }] },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm + 2 },
   tile: { width: '47.5%', flexGrow: 1, gap: spacing.xs },
@@ -198,7 +198,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   sectionTitle: { ...type.h2, color: colors.text },
-  seeAll: { ...type.label, color: colors.red },
+  seeAll: { ...type.label, color: colors.green },
   empty: { ...type.body, color: colors.secondaryText },
   historyRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.sm + 4 },
   historyIcon: {

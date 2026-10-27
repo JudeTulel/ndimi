@@ -16,13 +16,29 @@ type Loaded = { catalogId: string; path: string; installedAt: string; modelId: s
 
 let loaded: Loaded | null = null;
 
-export function installedAsrModel(): CatalogModel | undefined {
+/**
+ * The installed speech model for a spoken language.
+ *
+ * Models are language-scoped (the Swahili fine-tune is `sw`-only, the tiny model
+ * is `en`-only), so picking the first installed artifact would feed English speech
+ * to a Swahili model and get gibberish. Prefer an exact match, then a wildcard,
+ * then the smallest remaining model so a mismatch still transcribes something.
+ */
+export function installedAsrModel(language?: string): CatalogModel | undefined {
   const snapshot = getSnapshot();
-  return CATALOG.find((m) => m.task === 'asr' && snapshot[m.id]?.status === 'installed');
+  const installed = CATALOG.filter(
+    (m) => m.task === 'asr' && snapshot[m.id]?.status === 'installed'
+  );
+  if (!language) return installed[0];
+  return (
+    installed.find((m) => m.languages.includes(language)) ??
+    installed.find((m) => m.languages.includes('*')) ??
+    installed.sort((a, b) => a.sizeBytes - b.sizeBytes)[0]
+  );
 }
 
 async function ensureModel(language: string): Promise<Loaded> {
-  const model = installedAsrModel();
+  const model = installedAsrModel(language);
   if (!model) {
     throw new Error('No speech model installed. Install one in Settings › Models.');
   }

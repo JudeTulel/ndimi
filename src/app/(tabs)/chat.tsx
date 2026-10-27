@@ -1,15 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { CircleButton } from '../../components/CircleButton';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { Screen } from '../../components/Screen';
 import { colors, radius, spacing, surfaceTheme, type } from '../../theme/tokens';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { hasChatModel, streamChat, type ChatMessage } from '../../features/chat/chatService';
+import { useKeyboardHeight } from '../../core/ui/useKeyboardHeight';
 
 type Bubble = ChatMessage & { id: string; streaming?: boolean };
+
+/** Tab bar height (62) plus its bottom margin (10), so the composer clears it. */
+const TAB_BAR_CLEARANCE = 72;
 
 const GREETING: Bubble = {
   id: 'greeting',
@@ -19,7 +22,7 @@ const GREETING: Bubble = {
 
 export default function Chat() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
+  const keyboard = useKeyboardHeight();
   const [messages, setMessages] = useState<Bubble[]>([GREETING]);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
@@ -29,6 +32,10 @@ export default function Chat() {
   const model = hasChatModel();
 
   useEffect(() => () => { cancelSignal.current.cancelled = true; }, []);
+
+  const stop = () => {
+    cancelSignal.current.cancelled = true;
+  };
 
   const send = async () => {
     const text = draft.trim();
@@ -71,7 +78,7 @@ export default function Chat() {
   };
 
   return (
-    <Screen fixed gutter={0} footerGap={0} contentStyle={styles.content}>
+    <Screen fixed gutter={0} footerGap={0} contentStyle={styles.content} tabBar={false} ownBottom>
       <View style={styles.header}>
         <CircleButton onPress={() => router.push('/(tabs)')} accessibilityLabel="Home">
           <Ionicons name="chevron-back" size={20} color={colors.text} />
@@ -85,23 +92,25 @@ export default function Chat() {
         </CircleButton>
       </View>
 
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={styles.flex}>
         <ScrollView
           ref={scroller}
           contentContainerStyle={styles.thread}
           onContentSizeChange={() => scroller.current?.scrollToEnd({ animated: true })}
           keyboardShouldPersistTaps="handled">
-          {messages.map((message) => (
-            <View
-              key={message.id}
-              style={[styles.bubble, message.role === 'user' ? styles.mine : styles.theirs]}>
-              <Text style={[styles.bubbleText, message.role === 'user' && styles.mineText]}>
-                {message.content || (message.streaming ? '…' : '')}
-              </Text>
-            </View>
-          ))}
+          {messages.map((message) => {
+            const mine = message.role === 'user';
+            return (
+              <View key={message.id} style={styles.row}>
+                {!mine ? <Text style={styles.from}>ASSISTANT</Text> : null}
+                <View style={[styles.bubble, mine ? styles.mine : styles.theirs]}>
+                  <Text style={[styles.bubbleText, mine ? styles.mineText : styles.theirsText]}>
+                    {message.content || (message.streaming ? '…' : '')}
+                  </Text>
+                </View>
+              </View>
+            );
+          })}
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -119,7 +128,15 @@ export default function Chat() {
           ) : null}
         </ScrollView>
 
-        <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+        {/* `Screen` already shortens the viewport by the keyboard height, so the
+            composer only adds what the keyboard does not cover: a flat gap while
+            typing, and clearance over the floating tab bar when it is closed. The
+            safe-area inset is not added back — the tab bar owns that space. */}
+        <View
+          style={[
+            styles.composer,
+            { paddingBottom: keyboard > 0 ? spacing.sm : TAB_BAR_CLEARANCE + spacing.xs },
+          ]}>
           <TextInput
             style={styles.input}
             placeholder="Message the assistant…"
@@ -127,17 +144,20 @@ export default function Chat() {
             value={draft}
             onChangeText={setDraft}
             multiline
+            editable={!busy}
           />
+          {/* Same slot swaps role: stop while a reply streams, send otherwise. The
+              field is disabled during a run, so these never both apply. */}
           <CircleButton
             size={44}
             tone="solid"
-            disabled={!draft.trim() || busy || !model}
-            onPress={send}
-            accessibilityLabel="Send">
-            <Ionicons name="arrow-up" size={19} color="#FFFFFF" />
+            disabled={busy ? false : !draft.trim() || !model}
+            onPress={busy ? stop : send}
+            accessibilityLabel={busy ? 'Stop response' : 'Send'}>
+            <Ionicons name={busy ? 'stop' : 'arrow-up'} size={19} color="#FFFFFF" />
           </CircleButton>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </Screen>
   );
 }
@@ -154,19 +174,24 @@ const styles = StyleSheet.create({
   },
   headerText: { flex: 1, gap: 1 },
   title: { ...type.h1, color: colors.text },
-  subtitle: { ...type.body, fontSize: 11, color: colors.secondaryText },
+  subtitle: { ...type.body, fontSize: 11, color: colors.green },
   thread: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, gap: spacing.sm },
+  row: { gap: 3 },
+  from: { ...type.label, fontSize: 9, color: colors.green, marginLeft: spacing.xs },
   bubble: { maxWidth: '86%', borderRadius: radius.input, padding: spacing.sm + 4 },
   mine: { alignSelf: 'flex-end', backgroundColor: colors.red },
   theirs: {
     alignSelf: 'flex-start',
     backgroundColor: colors.surfaceRaised,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.successSoft,
     ...surfaceTheme.shadow,
   },
   bubbleText: { ...type.body, fontSize: 13.5, color: colors.text },
   mineText: { color: '#FFFFFF' },
+  // Green on the assistant side only: it marks the machine voice without tinting
+  // body copy the user typed.
+  theirsText: { color: colors.greenInk },
   error: { ...type.body, fontSize: 11, color: colors.danger },
   empty: { gap: spacing.sm, marginTop: spacing.md },
   emptyText: { ...type.body, color: colors.secondaryText },
@@ -176,23 +201,21 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    backgroundColor: colors.surface,
   },
+  // Floating field: no band behind it and no frame around it, so the composer reads
+  // as part of the cream page rather than a boxed-off strip.
   input: {
     flex: 1,
     maxHeight: 120,
     minHeight: 44,
-    borderRadius: radius.input,
+    borderRadius: radius.pill,
     backgroundColor: colors.surfaceRaised,
-    borderWidth: 1,
-    borderColor: colors.border,
     paddingHorizontal: spacing.md,
     paddingTop: 12,
     paddingBottom: 12,
     ...type.body,
     fontSize: 13.5,
     color: colors.text,
+    ...surfaceTheme.shadow,
   },
 });

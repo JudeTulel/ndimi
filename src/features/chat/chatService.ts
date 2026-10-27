@@ -79,6 +79,15 @@ export async function streamChat(
     }
   }
   if (signal?.cancelled) return full;
-  const final = await run.final;
-  return final.contentText || full;
+
+  // Cancelling the decode tears down the event stream, so `run.final` can reject or
+  // resolve without a terminal event. Keep whatever already streamed instead of
+  // failing the whole turn and blanking the bubble.
+  try {
+    const final = await run.final;
+    return final.contentText || full;
+  } catch (error) {
+    if (full) return full;
+    throw error;
+  }
 }

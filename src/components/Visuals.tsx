@@ -66,7 +66,12 @@ export function VoiceWaveform({ active, bars = HEIGHTS }: Props) {
   );
 }
 
-/** Decorative iridescent sphere for the Translate screen hero. */
+/**
+ * Decorative iridescent sphere for the Translate screen hero.
+ *
+ * A rotating diagonal gradient with a gloss overlay: two stacked layers that only
+ * animate a transform, so it stays on the native driver.
+ */
 export function Orb({ size = 168 }: { size?: number }) {
   const spin = useRef(new Animated.Value(0)).current;
 
@@ -84,18 +89,25 @@ export function Orb({ size = 168 }: { size?: number }) {
   }, [spin]);
 
   const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  const radius = size / 2;
 
   return (
-    <View style={[styles.orbWrap, { width: size, height: size, borderRadius: size / 2 }]}>
+    <View style={[styles.orbWrap, { width: size, height: size, borderRadius: radius }]}>
       <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ rotate }] }]}>
         <LinearGradient
           colors={[...gradient.orb]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={[StyleSheet.absoluteFill, { borderRadius: size / 2 }]}
+          style={[StyleSheet.absoluteFill, { borderRadius: radius }]}
         />
       </Animated.View>
-      <View style={[styles.orbGloss, { borderRadius: size / 2 }]} />
+      {/* Specular highlight: a small off-centre ellipse with a second, stronger one
+          inside it fakes glass. Static, so it does not rotate with the gradient. */}
+      <View style={[styles.orbSheen, { borderRadius: radius }]}>
+        <View style={styles.orbSpec} />
+        <View style={styles.orbSpecCore} />
+      </View>
+      <View style={[styles.orbGloss, { borderRadius: radius }]} />
     </View>
   );
 }
@@ -103,11 +115,41 @@ export function Orb({ size = 168 }: { size?: number }) {
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 60 },
   bar: { width: 10, borderRadius: 999 },
-  orbWrap: { overflow: 'hidden', backgroundColor: '#F5ECC2' },
+  orbWrap: {
+    overflow: 'hidden',
+    backgroundColor: '#F5ECC2',
+    // Shadow lifts the sphere off the cream background.
+    shadowColor: '#FF073A',
+    shadowOpacity: 0.22,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 8,
+  },
   orbGloss: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(255,255,255,0.22)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.7)',
+  },
+  orbSheen: { ...StyleSheet.absoluteFillObject, overflow: 'hidden' },
+  orbSpec: {
+    position: 'absolute',
+    top: '12%',
+    left: '14%',
+    width: '46%',
+    height: '34%',
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.42)',
+    transform: [{ rotate: '-18deg' }],
+  },
+  orbSpecCore: {
+    position: 'absolute',
+    top: '17%',
+    left: '20%',
+    width: '22%',
+    height: '15%',
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    transform: [{ rotate: '-18deg' }],
   },
 });

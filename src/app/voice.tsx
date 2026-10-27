@@ -19,6 +19,7 @@ import { CATALOG } from '../features/models/catalog';
 import { subscribe, type ModelStatusMap } from '../features/models/modelStore';
 import { saveTranslation } from '../features/history/historyStore';
 import { useVoiceRecorder } from '../features/voice/useVoiceRecorder';
+import { installedAsrModel } from '../features/voice/asrService';
 import {
   runVoiceTranslation,
   type PipelineUpdate,
@@ -58,8 +59,8 @@ export default function Voice() {
   const to: TranslationLanguage = from === 'en' ? 'sw' : 'en';
 
   const asr = useMemo(
-    () => CATALOG.find((m) => m.task === 'asr' && status[m.id]?.status === 'installed'),
-    [status]
+    () => installedAsrModel(from),
+    [status, from] // eslint-disable-line react-hooks/exhaustive-deps
   );
   const nmt = useMemo(
     () => CATALOG.find((m) => m.task === 'translation' && status[m.id]?.status === 'installed'),
@@ -175,10 +176,29 @@ export default function Voice() {
       <VoiceWaveform active={phase === 'listening'} />
 
       <View style={styles.copy}>
-        <Text style={styles.hero}>
-          Talk freely <Text style={styles.ai}>AI</Text> translates instantly across languages
+        {/* The promo copy is the first thing to give up room once a phase needs it:
+            this screen is `fixed`, so overflow would push the controls off-screen. */}
+        {phase === 'idle' ? (
+          <>
+            <Text style={styles.hero}>
+              Talk freely <Text style={styles.ai}>AI</Text> translates instantly across languages
+            </Text>
+            <Text style={styles.sub}>Speak naturally and let the translator handle the rest.</Text>
+          </>
+        ) : null}
+        {/* Model state, not a generic hint. The stage is opaque enough already
+            without hiding which model is about to run over the audio. */}
+        <Text style={styles.note} numberOfLines={2}>
+          {!asr
+            ? 'No speech model installed. Use Settings › Models to add one.'
+            : !ready
+              ? `${asr.title} is ready; a translation model is still missing.`
+              : phase === 'processing'
+                ? `Transcribing with ${asr.title} on device… translation follows.`
+                : phase === 'listening'
+                  ? `Recording for ${asr.title} (${asr.languages.map((l) => l.toUpperCase()).join('/')}). Speech runs once you stop.`
+                  : `Speech model: ${asr.title} · ${asr.quantization} · ${asr.languages.map((l) => l.toUpperCase()).join('/')}.`}
         </Text>
-        <Text style={styles.sub}>Speak naturally and let the translator handle the rest.</Text>
       </View>
 
       {phase === 'result' ? (
@@ -297,12 +317,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs + 2,
   },
-  pairText: { ...type.label, color: colors.text },
-  status: { ...type.label, color: colors.secondaryText, textAlign: 'center' },
-  copy: { alignItems: 'center', gap: spacing.sm },
+  pairText: { ...type.label, color: colors.greenInk },
+  status: { ...type.label, color: colors.green, textAlign: 'center' },
+  // `flex: 1` so this block absorbs the slack instead of growing the column past the
+  // screen and pushing the mic out of reach.
+  copy: { alignItems: 'center', justifyContent: 'center', gap: spacing.sm, flex: 1 },
   hero: { ...type.hero, color: colors.text, textAlign: 'center' },
   ai: { color: colors.red },
   sub: { ...type.body, color: colors.secondaryText, textAlign: 'center' },
+  note: { ...type.body, fontSize: 11, color: colors.secondaryText, textAlign: 'center' },
   result: { gap: spacing.xs },
   resultHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   resultLabel: { ...type.label, color: colors.secondaryText },
@@ -311,7 +334,8 @@ const styles = StyleSheet.create({
   grow: { flex: 1 },
   errorRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2 },
   errorText: { ...type.body, fontSize: 11, color: colors.red, flex: 1 },
-  controls: { alignItems: 'center', gap: spacing.sm, paddingBottom: spacing.sm },
+  // Never shrink the controls; let the copy block above absorb the pressure.
+  controls: { alignItems: 'center', gap: spacing.sm, paddingBottom: spacing.sm, flexShrink: 0 },
   micWrap: { alignItems: 'center', gap: spacing.sm },
   timer: { ...type.label, color: colors.secondaryText },
   hint: { ...type.body, fontSize: 11, color: colors.secondaryText, textAlign: 'center' },

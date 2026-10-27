@@ -12,6 +12,7 @@ import { CATALOG } from '../features/models/catalog';
 import { subscribe, type ModelStatusMap } from '../features/models/modelStore';
 import { saveTranslation } from '../features/history/historyStore';
 import { getDirection } from '../core/db/settings';
+import { useKeyboardHeight } from '../core/ui/useKeyboardHeight';
 import {
   cancelTranslation,
   translateText,
@@ -33,6 +34,7 @@ export default function Translate() {
   const [error, setError] = useState<string | null>(null);
   const [from, setFrom] = useState<TranslationLanguage>('en');
   const [copied, setCopied] = useState(false);
+  const keyboard = useKeyboardHeight();
   const session = useRef({ cancelled: false });
 
   useEffect(() => subscribe(setStatus), []);
@@ -129,18 +131,26 @@ export default function Translate() {
         </CircleButton>
       </View>
 
-      <View style={styles.hero}>
-        <Orb />
-      </View>
+      {/* The orb and promo copy push the input below the keyboard, so they fold
+          away while typing and the field keeps the top of the screen. Hiding the
+          orb beats shrinking it: it is a fixed-size circle, so a short box just
+          clips it. */}
+      {keyboard === 0 ? (
+        <View style={styles.hero}>
+          <Orb />
+        </View>
+      ) : null}
 
-      <View style={styles.heroCopy}>
-        <Text style={styles.heroTitle}>
-          Your <Text style={styles.ai}>AI</Text> Translator
-        </Text>
-        <Text style={styles.heroSub}>
-          Translate voice, text, and images instantly with powerful AI assistance.
-        </Text>
-      </View>
+      {keyboard === 0 ? (
+        <View style={styles.heroCopy}>
+          <Text style={styles.heroTitle}>
+            Your <Text style={styles.ai}>AI</Text> Translator
+          </Text>
+          <Text style={styles.heroSub}>
+            Translate voice, text, and images instantly with powerful AI assistance.
+          </Text>
+        </View>
+      ) : null}
 
       <Pressable style={styles.langRow} onPress={swap} accessibilityRole="button">
         <View style={styles.langPill}>
@@ -249,7 +259,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   langPill: { paddingHorizontal: spacing.xs },
-  langText: { ...type.cardTitle, color: colors.text },
+  langText: { ...type.cardTitle, color: colors.greenInk },
   inputCard: { gap: 0 },
   input: {
     minHeight: 108,

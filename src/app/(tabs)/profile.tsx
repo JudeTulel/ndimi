@@ -73,7 +73,7 @@ export default function Profile() {
   };
 
   return (
-    <Screen>
+    <Screen tabBar={false}>
       <Text style={styles.title}>Profile</Text>
 
       <View style={styles.card}>
