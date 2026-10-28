@@ -1,4 +1,5 @@
 import { Linking, Platform } from 'react-native';
+import { openApp } from './apps';
 import { findContact } from './contacts';
 import { requirePermission } from './permissions';
 import { latestFrom, latestMessages, sendSms, summarise } from './sms';
@@ -125,6 +126,12 @@ export const TOOLS: ToolSpec[] = [
       const result = await replyToSession(input);
       return result.text;
     },
+  },
+  {
+    name: 'open_app',
+    description: 'Open an installed app by name.',
+    args: 'app',
+    run: async (args) => openApp(args.app ?? ''),
   },
   {
     name: 'clock',
