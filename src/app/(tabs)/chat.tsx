@@ -1,29 +1,64 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { CircleButton } from '../../components/CircleButton';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { Screen } from '../../components/Screen';
 import { colors, radius, spacing, surfaceTheme, type } from '../../theme/tokens';
-import { hasChatModel, loadActiveChatModel, streamChat, subscribeActiveChat, type ChatMessage } from '../../features/chat/chatService';
+import {
+  hasChatModel,
+  loadActiveChatModel,
+  streamChat,
+  subscribeActiveChat,
+  type ChatMessage,
+} from '../../features/chat/chatService';
 import { useKeyboardHeight } from '../../core/ui/useKeyboardHeight';
 
 type Bubble = ChatMessage & { id: string; streaming?: boolean };
 
+/**
+ * Chat answers questions; Agent drives the phone. The two differ in prompt,
+ * suggestions and composer wording, so the mode is a first-class piece of state
+ * rather than a flag hidden in a message.
+ */
+type Mode = 'chat' | 'agent';
+
 /** Tab bar height (62) plus its bottom margin (10), so the composer clears it. */
 const TAB_BAR_CLEARANCE = 72;
 
-const GREETING: Bubble = {
-  id: 'greeting',
-  role: 'assistant',
-  content: 'Habari! Ask me anything — I run entirely on this phone.',
+const MODES: { key: Mode; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { key: 'chat', label: 'Chat', icon: 'chatbubble-ellipses-outline' },
+  { key: 'agent', label: 'Agent', icon: 'hardware-chip-outline' },
+];
+
+function greetingQuestion(mode: Mode): string {
+  return mode === 'chat' ? 'How can I help you?' : 'What should I do?';
+}
+
+function partOfDay(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'morning';
+  if (hour < 17) return 'afternoon';
+  return 'evening';
+}
+
+/** One-tap starts, tuned per mode: prompts in chat, real jobs in agent. */
+const SUGGESTIONS: Record<Mode, string[]> = {
+  chat: [
+    'Explain photosynthesis simply',
+    'Write a polite leave request',
+    'Translate “good morning” to Swahili',
+    'Draft a text to my landlord',
+  ],
+  agent: ['Call 0722 000 000', 'Send an SMS to Mum', 'Check my airtime (*334#)', 'What time is it?'],
 };
 
-export default function Chat() {
+export default function Assistant() {
   const router = useRouter();
   const keyboard = useKeyboardHeight();
-  const [messages, setMessages] = useState<Bubble[]>([GREETING]);
+  const [mode, setMode] = useState<Mode>('chat');
+  const [messages, setMessages] = useState<Bubble[]>([]);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,8 +80,8 @@ export default function Chat() {
     cancelSignal.current.cancelled = true;
   };
 
-  const send = async () => {
-    const text = draft.trim();
+  const send = async (prefill?: string) => {
+    const text = (prefill ?? draft).trim();
     if (!text || busy) return;
     setDraft('');
     setError(null);
@@ -59,11 +94,8 @@ export default function Chat() {
     setBusy(true);
 
     try {
-      const history = base
-        .filter((m) => m.id !== 'greeting')
-        .map(({ role, content }) => ({ role, content }));
       await streamChat(
-        history,
+        base.map(({ role, content }) => ({ role, content })),
         (partial) => {
           setMessages((current) =>
             current.map((m) => (m.id === replyId ? { ...m, content: partial } : m))
@@ -100,12 +132,58 @@ export default function Chat() {
         </CircleButton>
       </View>
 
+      {/* Mode switch. Chat is the default because it is the cheapest to run and the
+          only one a general model can do well. */}
+      <View style={styles.modes}>
+        {MODES.map((option) => {
+          const on = mode === option.key;
+          return (
+            <Pressable
+              key={option.key}
+              onPress={() => setMode(option.key)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: on }}
+              style={[styles.mode, on && styles.modeOn]}>
+              <Ionicons
+                name={option.icon}
+                size={14}
+                color={on ? '#FFFFFF' : colors.secondaryText}
+              />
+              <Text style={[styles.modeText, on && styles.modeTextOn]}>{option.label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
       <View style={styles.flex}>
         <ScrollView
           ref={scroller}
           contentContainerStyle={styles.thread}
           onContentSizeChange={() => scroller.current?.scrollToEnd({ animated: true })}
           keyboardShouldPersistTaps="handled">
+          {messages.length === 0 ? (
+            <>
+              <View style={styles.greeting}>
+                <Text style={styles.hello}>Hello, good {partOfDay()}.</Text>
+                <Text style={styles.question}>{greetingQuestion(mode)}</Text>
+              </View>
+              <Text style={styles.suggestLabel}>SUGGESTIONS</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.chips}>
+                {SUGGESTIONS[mode].map((suggestion) => (
+                  <Pressable
+                    key={suggestion}
+                    onPress={() => void send(suggestion)}
+                    style={({ pressed }) => [styles.chip, pressed && styles.chipPressed]}>
+                    <Text style={styles.chipText}>{suggestion}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </>
+          ) : null}
+
           {messages.map((message) => {
             const mine = message.role === 'user';
             return (
@@ -147,7 +225,7 @@ export default function Chat() {
           ]}>
           <TextInput
             style={styles.input}
-            placeholder="Message the assistant…"
+            placeholder={mode === 'chat' ? 'Message the assistant…' : 'Tell me what to do…'}
             placeholderTextColor={colors.secondaryText}
             value={draft}
             onChangeText={setDraft}
@@ -160,7 +238,7 @@ export default function Chat() {
             size={44}
             tone="solid"
             disabled={busy ? false : !draft.trim() || !model}
-            onPress={busy ? stop : send}
+            onPress={busy ? stop : () => void send()}
             accessibilityLabel={busy ? 'Stop response' : 'Send'}>
             <Ionicons name={busy ? 'stop' : 'arrow-up'} size={19} color="#FFFFFF" />
           </CircleButton>
@@ -183,7 +261,46 @@ const styles = StyleSheet.create({
   headerText: { flex: 1, gap: 1 },
   title: { ...type.h1, color: colors.text },
   subtitle: { ...type.body, fontSize: 11, color: colors.green },
+  modes: {
+    flexDirection: 'row',
+    alignSelf: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    padding: 4,
+    marginBottom: spacing.sm,
+  },
+  mode: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    borderRadius: radius.pill,
+    paddingVertical: spacing.sm - 2,
+    paddingHorizontal: spacing.md,
+  },
+  modeOn: { backgroundColor: colors.dark, ...surfaceTheme.shadow },
+  modeText: { ...type.label, fontSize: 11, color: colors.secondaryText },
+  modeTextOn: { color: '#FFFFFF' },
   thread: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, gap: spacing.sm },
+  greeting: { gap: 2, marginBottom: spacing.sm },
+  hello: { ...type.hero, color: colors.secondaryText, fontFamily: type.body.fontFamily },
+  question: { ...type.hero, color: colors.greenInk },
+  suggestLabel: { ...type.label, fontSize: 10, color: colors.text, letterSpacing: 1.2 },
+  chips: { gap: spacing.sm, paddingRight: spacing.lg, paddingVertical: spacing.xs },
+  chip: {
+    maxWidth: 210,
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.input,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 4,
+    ...surfaceTheme.shadow,
+  },
+  chipPressed: { opacity: 0.85 },
+  chipText: { ...type.cardTitle, fontSize: 12.5, color: colors.text },
   row: { gap: 3 },
   from: { ...type.label, fontSize: 9, color: colors.green, marginLeft: spacing.xs },
   bubble: { maxWidth: '86%', borderRadius: radius.input, padding: spacing.sm + 4 },
