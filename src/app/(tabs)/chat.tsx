@@ -116,15 +116,15 @@ export default function Assistant() {
       const history = base.map(({ role, content }) => ({ role, content }));
 
       if (agent) {
-        // The loop owns its own rounds; `onSay` only paints the first one, because a
-        // later round's JSON would otherwise flash over the spoken line.
-        const turn = await runAgentTurn(history, cancelSignal.current, (partial) =>
+        // The model streams JSON, which is noise in a bubble. Only the `say` value is
+        // painted, and a partial that has not reached it yet leaves the placeholder.
+        const turn = await runAgentTurn(history, cancelSignal.current, (partial) => {
+          const spoken = /"say"\s*:\s*"([^"]*)/.exec(partial)?.[1];
+          if (!spoken) return;
           setMessages((current) =>
-            current.map((m) =>
-              m.id === replyId && m.streaming ? { ...m, content: partial } : m
-            )
-          )
-        );
+            current.map((m) => (m.id === replyId ? { ...m, content: spoken } : m))
+          );
+        });
         setMessages((current) =>
           current.map((m) =>
             m.id === replyId ? { ...m, content: turn.say, steps: turn.steps } : m
