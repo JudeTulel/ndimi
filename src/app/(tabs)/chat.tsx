@@ -13,8 +13,7 @@ import {
   subscribeActiveChat,
   type ChatMessage,
 } from '../../features/chat/chatService';
-import { AGENT_SYSTEM_PROMPT, parsePlan } from '../../features/agent/prompt';
-import { describeResults, runPlan } from '../../features/agent/runner';
+import { runAgentTurn } from '../../features/agent/agentService';
 import { useKeyboardHeight } from '../../core/ui/useKeyboardHeight';
 
 type Bubble = ChatMessage & { id: string; streaming?: boolean; steps?: string };
@@ -98,28 +97,34 @@ export default function Assistant() {
 
     try {
       const history = base.map(({ role, content }) => ({ role, content }));
-      const reply = await streamChat(
+
+      if (agent) {
+        // The loop owns its own rounds; `onSay` only paints the first one, because a
+        // later round's JSON would otherwise flash over the spoken line.
+        const turn = await runAgentTurn(history, cancelSignal.current, (partial) =>
+          setMessages((current) =>
+            current.map((m) =>
+              m.id === replyId && m.streaming ? { ...m, content: partial } : m
+            )
+          )
+        );
+        setMessages((current) =>
+          current.map((m) =>
+            m.id === replyId ? { ...m, content: turn.say, steps: turn.steps } : m
+          )
+        );
+        return;
+      }
+
+      await streamChat(
         history,
         (partial) => {
           setMessages((current) =>
             current.map((m) => (m.id === replyId ? { ...m, content: partial } : m))
           );
         },
-        cancelSignal.current,
-        agent ? AGENT_SYSTEM_PROMPT : undefined
+        cancelSignal.current
       );
-
-      if (agent) {
-        const plan = parsePlan(reply);
-        const results = await runPlan(plan.calls);
-        setMessages((current) =>
-          current.map((m) =>
-            m.id === replyId
-              ? { ...m, content: plan.say || reply.trim(), steps: describeResults(plan, results) }
-              : m
-          )
-        );
-      }
     } catch (e) {
       const message = e instanceof Error ? e.message : 'The model failed to answer.';
       setError(message);

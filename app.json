@@ -23,7 +23,13 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.ndimi.swahili"
+      "package": "com.ndimi.swahili",
+      "permissions": [
+        "android.permission.READ_SMS",
+        "android.permission.SEND_SMS",
+        "android.permission.RECEIVE_SMS",
+        "android.permission.READ_CONTACTS"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -64,6 +70,7 @@
           "installMissingPrebuilds": true
         }
       ],
+      "react-native-ussd-advanced",
       "expo-asset",
       "expo-font"
     ]

@@ -1,4 +1,6 @@
 import { Linking, Platform } from 'react-native';
+import { latestFrom, latestMessages, sendSms, summarise } from './sms';
+import { replyToSession, startSession } from './ussd';
 
 /**
  * Tools the agent can run on the phone.
@@ -64,14 +66,60 @@ export const TOOLS: ToolSpec[] = [
     },
   },
   {
+    name: 'sms_send',
+    description: 'Send an SMS in the background without opening the app.',
+    args: 'number, message',
+    run: async (args) => {
+      const number = normaliseNumber(args.number ?? '');
+      const message = (args.message ?? '').trim();
+      if (!message) throw new Error('No message text given.');
+      await sendSms(number, message);
+      return `Sent to ${number}.`;
+    },
+  },
+  {
+    name: 'sms_read',
+    description: 'Read the newest inbox messages, optionally from one sender.',
+    args: 'sender?, count?',
+    run: async (args) => {
+      const count = Number(args.count ?? 5) || 5;
+      const rows = args.sender
+        ? await latestFrom(args.sender, count)
+        : await latestMessages(count);
+      return summarise(rows);
+    },
+  },
+  {
     name: 'ussd',
-    description: 'Open the dialer with a USSD code such as *334#.',
+    description: 'Open the dialer with a USSD code such as *334#. No reply is returned.',
     args: 'code',
     run: async (args) => {
       const code = (args.code ?? '').trim();
       if (!code) throw new Error('No USSD code given.');
       await Linking.openURL(encodeUssd(code));
       return `Opened ${code}.`;
+    },
+  },
+  {
+    name: 'ussd_start',
+    description: 'Run a USSD code in session and return the menu text.',
+    args: 'code',
+    run: async (args) => {
+      const code = (args.code ?? '').trim();
+      if (!code) throw new Error('No USSD code given.');
+      const result = await startSession(code);
+      return result.text;
+    },
+  },
+  {
+    name: 'ussd_reply',
+    description: 'Answer the open USSD menu and return the next menu.',
+    args: 'input',
+    run: async (args) => {
+      const input = (args.input ?? '').trim();
+      if (!input) throw new Error('No menu answer given.');
+      const result = await replyToSession(input);
+      return result.text;
     },
   },
   {
