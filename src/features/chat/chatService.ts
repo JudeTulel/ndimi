@@ -134,12 +134,17 @@ export function hasChatModel(): CatalogModel | undefined {
 export async function streamChat(
   history: ChatMessage[],
   onDelta: (text: string) => void,
-  signal?: { cancelled: boolean }
+  signal?: { cancelled: boolean },
+  /** Prepended as a `system` turn when the caller brings its own brief (the agent). */
+  systemPrompt?: string
 ): Promise<string> {
   const modelId = await ensureChatModel();
+  const prompt = systemPrompt
+    ? [{ role: 'system', content: systemPrompt }, ...history]
+    : history;
   const run = completion({
     modelId,
-    history: history.map((m) => ({ role: m.role, content: m.content })),
+    history: prompt.map((m) => ({ role: m.role, content: m.content })),
     stream: true,
   });
 

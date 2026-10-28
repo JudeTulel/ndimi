@@ -13,9 +13,11 @@ import {
   subscribeActiveChat,
   type ChatMessage,
 } from '../../features/chat/chatService';
+import { AGENT_SYSTEM_PROMPT, parsePlan } from '../../features/agent/prompt';
+import { describeResults, runPlan } from '../../features/agent/runner';
 import { useKeyboardHeight } from '../../core/ui/useKeyboardHeight';
 
-type Bubble = ChatMessage & { id: string; streaming?: boolean };
+type Bubble = ChatMessage & { id: string; streaming?: boolean; steps?: string };
 
 /**
  * Chat answers questions; Agent drives the phone. The two differ in prompt,
@@ -86,6 +88,7 @@ export default function Assistant() {
     setDraft('');
     setError(null);
     cancelSignal.current = { cancelled: false };
+    const agent = mode === 'agent';
 
     const userBubble: Bubble = { id: `u${Date.now()}`, role: 'user', content: text };
     const replyId = `a${Date.now()}`;
@@ -94,15 +97,29 @@ export default function Assistant() {
     setBusy(true);
 
     try {
-      await streamChat(
-        base.map(({ role, content }) => ({ role, content })),
+      const history = base.map(({ role, content }) => ({ role, content }));
+      const reply = await streamChat(
+        history,
         (partial) => {
           setMessages((current) =>
             current.map((m) => (m.id === replyId ? { ...m, content: partial } : m))
           );
         },
-        cancelSignal.current
+        cancelSignal.current,
+        agent ? AGENT_SYSTEM_PROMPT : undefined
       );
+
+      if (agent) {
+        const plan = parsePlan(reply);
+        const results = await runPlan(plan.calls);
+        setMessages((current) =>
+          current.map((m) =>
+            m.id === replyId
+              ? { ...m, content: plan.say || reply.trim(), steps: describeResults(plan, results) }
+              : m
+          )
+        );
+      }
     } catch (e) {
       const message = e instanceof Error ? e.message : 'The model failed to answer.';
       setError(message);
@@ -193,6 +210,7 @@ export default function Assistant() {
                   <Text style={[styles.bubbleText, mine ? styles.mineText : styles.theirsText]}>
                     {message.content || (message.streaming ? '…' : '')}
                   </Text>
+                  {message.steps ? <Text style={styles.steps}>{message.steps}</Text> : null}
                 </View>
               </View>
             );
@@ -317,6 +335,15 @@ const styles = StyleSheet.create({
   // Green on the assistant side only: it marks the machine voice without tinting
   // body copy the user typed.
   theirsText: { color: colors.greenInk },
+  steps: {
+    ...type.body,
+    fontSize: 10.5,
+    color: colors.secondaryText,
+    marginTop: spacing.xs,
+    paddingTop: spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
   error: { ...type.body, fontSize: 11, color: colors.danger },
   empty: { gap: spacing.sm, marginTop: spacing.md },
   emptyText: { ...type.body, color: colors.secondaryText },
