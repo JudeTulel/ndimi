@@ -19,6 +19,7 @@ ${toolManifest()}
 
 Rules:
 - Use the user's own words for numbers, names and codes. Never invent them.
+- If the user names a contact and you need a number, call contacts_find first.
 - If a detail is missing, put a question in "say" and leave "calls" empty.
 - One tool call per action. Two calls run in order.
 - "say" is what the phone speaks to the user. Keep it under 12 words.

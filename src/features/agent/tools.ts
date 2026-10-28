@@ -1,4 +1,5 @@
 import { Linking, Platform } from 'react-native';
+import { findContact } from './contacts';
 import { requirePermission } from './permissions';
 import { latestFrom, latestMessages, sendSms, summarise } from './sms';
 import { replyToSession, startSession } from './ussd';
@@ -130,6 +131,16 @@ export const TOOLS: ToolSpec[] = [
     description: 'Read the current date and time on the phone.',
     args: 'none',
     run: async () => new Date().toString(),
+  },
+  {
+    name: 'contacts_find',
+    description: 'Look up a phone number by contact name.',
+    args: 'name',
+    run: async (args) => {
+      const name = (args.name ?? '').trim();
+      if (!name) throw new Error('No contact name given.');
+      return findContact(name);
+    },
   },
 ];
 

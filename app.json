@@ -71,6 +71,12 @@
         }
       ],
       "react-native-ussd-advanced",
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Ndimi looks up a saved number when the agent is told a contact name."
+        }
+      ],
       "expo-asset",
       "expo-font"
     ]
