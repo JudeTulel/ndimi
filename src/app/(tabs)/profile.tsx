@@ -1,11 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { Screen } from '../../components/Screen';
+import { PrimaryButton } from '../../components/PrimaryButton';
 import { colors, radius, spacing, type } from '../../theme/tokens';
 import { CATALOG, formatBytes } from '../../features/models/catalog';
 import { subscribe, type ModelStatusMap } from '../../features/models/modelStore';
+import { clearPin, hasPin, setPin } from '../../features/agent/pin';
 import { clearHistory, listHistory } from '../../features/history/historyStore';
 import {
   DIRECTIONS,
@@ -23,13 +25,27 @@ export default function Profile() {
   const [offline, setOffline] = useState(false);
   const [saved, setSaved] = useState<number | null>(null);
   const [cleared, setCleared] = useState(false);
+  const [hasSaved, setHasSaved] = useState<boolean | null>(null);
+  const [pinDraft, setPinDraft] = useState('');
 
   useEffect(() => subscribe(setStatus), []);
   useEffect(() => {
     void getDirection().then(setDirectionState);
     void getOfflineMode().then(setOffline);
     void listHistory({ limit: 1000 }).then((rows) => setSaved(rows.length));
+    void hasPin().then(setHasSaved);
   }, []);
+
+  const savePin = async () => {
+    await setPin(pinDraft);
+    setPinDraft('');
+    setHasSaved(true);
+  };
+
+  const forgetPin = async () => {
+    await clearPin();
+    setHasSaved(false);
+  };
 
   const counts = useMemo(() => {
     const values = CATALOG.map((model) => status[model.id]?.status ?? 'absent');
@@ -144,6 +160,47 @@ export default function Profile() {
         <Ionicons name="chevron-forward" size={18} color={colors.secondaryText} />
       </Pressable>
 
+      <Text style={styles.section}>Agent</Text>
+
+      <View style={styles.pinRow}>
+        <View style={styles.rowIcon}>
+          <Ionicons name="keypad-outline" size={20} color={colors.red} />
+        </View>
+        <View style={styles.rowText}>
+          <Text style={styles.rowTitle}>M-Pesa PIN</Text>
+          <Text style={styles.rowCaption}>
+            {hasSaved === null
+              ? 'Reading…'
+              : hasSaved
+                ? 'Saved — the agent sends it when a USSD menu asks.'
+                : 'Not saved. The agent cannot pay or confirm without it.'}
+          </Text>
+        </View>
+        {hasSaved ? (
+          <Pressable onPress={() => void forgetPin()} hitSlop={8}>
+            <Text style={styles.pinForget}>Clear</Text>
+          </Pressable>
+        ) : null}
+      </View>
+      <View style={styles.pinInputRow}>
+        <TextInput
+          style={styles.pinInput}
+          value={pinDraft}
+          onChangeText={setPinDraft}
+          placeholder="4 to 6 digits"
+          placeholderTextColor={colors.secondaryText}
+          keyboardType="number-pad"
+          secureTextEntry
+          maxLength={6}
+        />
+        <PrimaryButton
+          label={hasSaved ? 'Update' : 'Save'}
+          compact
+          disabled={pinDraft.replace(/\D/g, '').length < 4}
+          onPress={() => void savePin()}
+        />
+      </View>
+
       <Text style={styles.section}>Manage</Text>
 
       <SettingRow
@@ -244,6 +301,31 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   rowText: { flex: 1, gap: 2 },
+  pinRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.input,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+  },
+  pinForget: { ...type.label, fontSize: 10, color: colors.red },
+  pinInputRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  pinInput: {
+    flex: 1,
+    height: 44,
+    borderRadius: radius.input,
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    ...type.body,
+    fontSize: 15,
+    letterSpacing: 3,
+    color: colors.text,
+  },
   rowTitle: { ...type.cardTitle, color: colors.text },
   rowCaption: { ...type.body, fontSize: 11, color: colors.secondaryText },
   footnote: { ...type.body, fontSize: 11, color: colors.secondaryText, marginTop: spacing.sm },
