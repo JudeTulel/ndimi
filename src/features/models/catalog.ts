@@ -39,6 +39,12 @@ export type CatalogModel = {
     sizeBytes: number;
     sha256: string;
   };
+  /**
+   * Instruction sent with the image when this model reads a page. OCR-tuned models
+   * like LightOnOCR transcribe from an empty prompt, so the wording is per model
+   * rather than global. Absent means the generic transcribe-everything prompt.
+   */
+  ocrPrompt?: string;
 };
 
 const GB = 1024 * 1024 * 1024;
@@ -189,6 +195,32 @@ export const CATALOG: CatalogModel[] = [
     runtimePlugin: 'llamacpp-completion',
     languages: ['en', 'sw'],
     quantization: 'Q3_K_M',
+  },
+  {
+    id: 'lightonocr-3-0.8b-q4',
+    task: 'ocr',
+    title: 'LightOnOCR 3 0.8B (read a page)',
+    summary:
+      'Purpose-built document reader at 505 MB. Transcribes pages, tables, receipts and forms as markdown text. Best accuracy per byte of the camera readers.',
+    url: 'https://huggingface.co/Prathat/LightOnOCR-3-0.8B-GGUF/resolve/2c4134bf5b86940016f72fda0583609009cefa60/LightOnOCR-3-0.8B-Q4_K_M.gguf',
+    repo: 'Prathat/LightOnOCR-3-0.8B-GGUF',
+    revision: '2c4134bf5b86940016f72fda0583609009cefa60',
+    filename: 'LightOnOCR-3-0.8B-Q4_K_M.gguf',
+    sizeBytes: 529_297_472,
+    sha256: '32eed216ffdd38254ecf6f1b7bc3360e74dae5b65873b7f1ce3590043315a658',
+    licence: 'Apache-2.0',
+    publisher: 'Prathat',
+    runtimePlugin: 'llamacpp-completion',
+    languages: ['en'],
+    quantization: 'Q4_K_M',
+    // Transcription mode is an empty prompt: the image alone is the instruction.
+    ocrPrompt: '',
+    projection: {
+      url: 'https://huggingface.co/Prathat/LightOnOCR-3-0.8B-GGUF/resolve/2c4134bf5b86940016f72fda0583609009cefa60/LightOnOCR-3-0.8B-mmproj-f16.gguf',
+      filename: 'LightOnOCR-3-0.8B-mmproj-f16.gguf',
+      sizeBytes: 204_987_136,
+      sha256: 'e77f2ebb738f5c7852e955f09440c407d9c54b56c6f6098900380706302e8742',
+    },
   },
   {
     id: 'smolvlm-500m-q4',

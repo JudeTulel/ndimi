@@ -2,7 +2,7 @@ import { completion, loadModel, ocr, unloadModel } from '@qvac/sdk';
 import * as FileSystem from 'expo-file-system/legacy';
 import { toRuntimePath } from '../../core/fs/paths';
 import { getOfflineMode } from '../../core/db/settings';
-import { CATALOG } from '../models/catalog';
+import { CATALOG, type CatalogModel } from '../models/catalog';
 import { getSnapshot } from '../models/modelStore';
 
 const MODEL_DIR = `${FileSystem.documentDirectory}models/`;
@@ -10,8 +10,8 @@ const MODEL_DIR = `${FileSystem.documentDirectory}models/`;
 type Loaded = { modelId: string };
 
 let loaded: Loaded | null = null;
-/** True when the loaded handle is a vision model, which answers instead of reading. */
-let vision = false;
+/** The entry behind the warm handle; decides how a read is worded. */
+let loadedModel: CatalogModel | null = null;
 
 /**
  * OCR runs the ggml-ocr easyocr pipeline: a CRAFT detector plus a CRNN Latin
@@ -23,6 +23,10 @@ const RECOGNIZER = 'registry://s3/qvac_models_compiled/ocr/gguf/easyocr/2026-05-
 
 const LATIN_SCRIPTS = new Set(['latin']);
 
+/** Prompt for a general vision model, which describes unless told to transcribe. */
+const GENERIC_PROMPT =
+  'Transcribe all the text in this image exactly as written, line by line. Return only the text, with no commentary.';
+
 /**
  * The recognizer only covers Latin script. Reads better as a capability check on
  * the artifact than as a hardcoded `true`.
@@ -33,7 +37,7 @@ export function ocrReady(): boolean {
 }
 
 /**
- * True once this run has successfully loaded the OCR pair. The runtime caches the
+ * True once this run has successfully loaded an OCR model. The runtime caches the
  * registry weights after the first load, so a cold first run needs connectivity
  * and offline mode has to refuse rather than hang on a fetch.
  */
@@ -41,62 +45,62 @@ export function ocrWarm(): boolean {
   return loaded !== null;
 }
 
+/**
+ * Which installed reader to use.
+ *
+ * A purpose-built document reader (one carrying an `ocrPrompt`) wins over a
+ * general vision model, and a downloaded vision install wins over the registry
+ * fallback pair — the fallback needs connectivity on its first run.
+ */
+async function chooseModel(): Promise<CatalogModel | null> {
+  const snapshot = getSnapshot();
+  const installed = CATALOG.filter(
+    (m) => m.task === 'ocr' && !m.runtimeManaged && snapshot[m.id]?.status === 'installed'
+  );
+  return installed.find((m) => m.ocrPrompt !== undefined) ?? installed[0] ?? null;
+}
+
 async function ensureModel(): Promise<string> {
   if (loaded) return loaded.modelId;
 
-  // Whichever OCR-capable model is installed, preferring a downloaded one over the
-  // registry fallback. A vision model wins when present because it is the more
-  // capable reader; its projector is part of its install.
-  const snapshot = getSnapshot();
-  const installed = CATALOG.filter(
-    (m) => m.task === 'ocr' && snapshot[m.id]?.status === 'installed'
-  );
-  const visionModel = installed.find((m) => m.projection);
-  const chosen = visionModel
-    ? snapshot[visionModel.id]
-    : snapshot['ocr-latin-g2']?.status === 'installed'
-      ? snapshot['ocr-latin-g2']
-      : null;
+  const chosen = await chooseModel();
+  loadedModel = chosen;
 
-  vision = !!visionModel;
-
-  const modelSrc =
-    chosen && chosen.status === 'installed' ? toRuntimePath(chosen.localPath) : RECOGNIZER;
-
-  if (visionModel) {
+  if (!chosen) {
+    // Neither an installed reader nor the registry pair is available: let the
+    // runtime fetch its own easyocr pair.
     loaded = {
       modelId: await loadModel({
-        modelSrc,
-        modelType: 'llamacpp-completion',
+        modelSrc: RECOGNIZER,
+        modelType: 'ggml-ocr',
         modelConfig: {
-          ctx_size: 2048,
-          ...(visionModel.projection
-            ? {
-                projectionModelSrc: toRuntimePath(
-                  `${MODEL_DIR}${visionModel.projection.filename}`
-                ),
-              }
-            : {}),
+          pipelineType: 'easyocr',
+          langList: ['en'],
+          // Mobile memory cannot hold the 2560 default detection canvas.
+          canvasSize: 1280,
         },
       }),
     };
-    vision = true;
     return loaded.modelId;
   }
 
+  const state = getSnapshot()[chosen.id];
+  if (state?.status !== 'installed') throw new Error('The OCR model is not installed.');
+
+  // A vision entry is a completion model with a projector, not an OCR pipeline: it
+  // answers free-form prompts about the image rather than returning text blocks.
   loaded = {
     modelId: await loadModel({
-      modelSrc,
-      modelType: 'ggml-ocr',
+      modelSrc: toRuntimePath(state.localPath),
+      modelType: 'llamacpp-completion',
       modelConfig: {
-        pipelineType: 'easyocr',
-        langList: ['en'],
-        // Mobile memory cannot hold the 2560 default detection canvas.
-        canvasSize: 1280,
+        ctx_size: 2048,
+        ...(chosen.projection
+          ? { projectionModelSrc: toRuntimePath(`${MODEL_DIR}${chosen.projection.filename}`) }
+          : {}),
       },
     }),
   };
-  vision = false;
   return loaded.modelId;
 }
 
@@ -104,6 +108,7 @@ export async function unloadOcrModel(): Promise<void> {
   if (!loaded) return;
   await unloadModel({ modelId: loaded.modelId }).catch(() => {});
   loaded = null;
+  loadedModel = null;
 }
 
 /**
@@ -129,16 +134,15 @@ export async function readText(base64Jpeg: string): Promise<string> {
 
   try {
     // A vision model has no text-block API; it is asked in words and answers in words.
-    // The prompt is deliberately extractive so it returns the page rather than a
-    // description of the page.
-    if (vision) {
+    // An empty prompt is meaningful — OCR-trained models transcribe from the image
+    // alone, so the generic wording would change their output.
+    if (loadedModel) {
       const run = completion({
         modelId,
         history: [
           {
             role: 'user',
-            content:
-              'Transcribe all the text in this image exactly as written, line by line. Return only the text, with no commentary.',
+            content: loadedModel.ocrPrompt ?? GENERIC_PROMPT,
             attachments: [{ path: toRuntimePath(tempUri) }],
           },
         ],
