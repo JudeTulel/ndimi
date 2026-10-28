@@ -1,6 +1,7 @@
 import { Linking, Platform } from 'react-native';
 import { openApp } from './apps';
 import { findContact } from './contacts';
+import { pinForUssd, setPin } from './pin';
 import { requirePermission } from './permissions';
 import { latestFrom, latestMessages, sendSms, summarise } from './sms';
 import { replyToSession, startSession } from './ussd';
@@ -122,6 +123,26 @@ export const TOOLS: ToolSpec[] = [
       const input = (args.input ?? '').trim();
       if (!input) throw new Error('No menu answer given.');
       const result = await replyToSession(input);
+      return result.text;
+    },
+  },
+  {
+    name: 'pin_set',
+    description: 'Save the M-Pesa PIN on this phone.',
+    args: 'pin',
+    run: async (args) => {
+      await setPin(args.pin ?? '');
+      return 'PIN saved.';
+    },
+  },
+  {
+    name: 'pin_send',
+    description: 'Send the saved PIN into the open USSD menu.',
+    args: 'none',
+    run: async () => {
+      const pin = await pinForUssd();
+      if (!pin) throw new Error('No PIN saved. Ask the user to set one.');
+      const result = await replyToSession(pin);
       return result.text;
     },
   },

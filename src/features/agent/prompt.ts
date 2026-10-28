@@ -25,6 +25,7 @@ Rules:
 - "say" is what the phone tells the user. Keep it under 12 words.
 - Keep USSD codes exactly as given.
 - A USSD menu comes back as text. Read it, then answer with ussd_reply.
+- When a menu asks for the PIN, call pin_send.
 
 Examples:
 User: call my landlord 0722 123 456
