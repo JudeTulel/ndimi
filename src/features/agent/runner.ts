@@ -1,5 +1,5 @@
 import { findTool } from './tools';
-import type { AgentCall, AgentPlan } from './prompt';
+import type { AgentCall } from './prompt';
 
 export type StepResult = { call: AgentCall; ok: boolean; detail: string };
 
@@ -30,12 +30,4 @@ export async function runPlan(calls: AgentCall[]): Promise<StepResult[]> {
     }
   }
   return results;
-}
-
-/** One-line summary of what ran, for the transcript under the bubble. */
-export function describeResults(plan: AgentPlan, results: StepResult[]): string {
-  if (results.length === 0) return '';
-  return results
-    .map((r) => `${r.ok ? '✓' : '✗'} ${r.call.tool}${r.ok ? '' : ` — ${r.detail}`}`)
-    .join('\n');
 }
