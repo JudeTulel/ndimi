@@ -9,9 +9,7 @@ import { replyToSession, startSession } from './ussd';
  * Tools the agent can run on the phone.
  *
  * Deliberately few and small: a 0.5B–3B on-device model picks from this list, so
- * every tool has a one-clause description and a flat argument shape. Anything that
- * needs a multi-step dialog (a real USSD session, reading the inbox) arrives as a
- * later increment rather than bloating the first set.
+ * every tool has a one-clause description and a flat argument shape.
  */
 export type ToolSpec = {
   name: string;
