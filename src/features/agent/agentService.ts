@@ -67,7 +67,7 @@ export async function runAgentTurn(
     if (results.some((r) => !r.ok)) break;
   }
 
-  return { say, steps: trail.join('\n') };
+  return { say: say || (trail.length ? 'Done.' : 'I did not catch that — try again.'), steps: trail.join('\n') };
 }
 
 function describeSteps(results: StepResult[]): string[] {
