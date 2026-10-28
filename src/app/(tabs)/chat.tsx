@@ -6,7 +6,7 @@ import { CircleButton } from '../../components/CircleButton';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { Screen } from '../../components/Screen';
 import { colors, radius, spacing, surfaceTheme, type } from '../../theme/tokens';
-import { hasChatModel, streamChat, type ChatMessage } from '../../features/chat/chatService';
+import { hasChatModel, loadActiveChatModel, streamChat, subscribeActiveChat, type ChatMessage } from '../../features/chat/chatService';
 import { useKeyboardHeight } from '../../core/ui/useKeyboardHeight';
 
 type Bubble = ChatMessage & { id: string; streaming?: boolean };
@@ -29,7 +29,15 @@ export default function Chat() {
   const [error, setError] = useState<string | null>(null);
   const scroller = useRef<ScrollView>(null);
   const cancelSignal = useRef({ cancelled: false });
+  const [, forceRender] = useState(0);
   const model = hasChatModel();
+
+  useEffect(() => {
+    // The chosen model lives in a preference; load it once, then repaint whenever the
+    // Settings screen switches it so the header keeps telling the truth.
+    void loadActiveChatModel();
+    return subscribeActiveChat(() => forceRender((n) => n + 1));
+  }, []);
 
   useEffect(() => () => { cancelSignal.current.cancelled = true; }, []);
 
@@ -85,7 +93,7 @@ export default function Chat() {
         </CircleButton>
         <View style={styles.headerText}>
           <Text style={styles.title}>Assistant</Text>
-          <Text style={styles.subtitle}>{model ? 'On device · Llama 3.2' : 'No chat model'}</Text>
+          <Text style={styles.subtitle}>{model ? `On device · ${model.title}` : 'No chat model'}</Text>
         </View>
         <CircleButton onPress={() => router.push('/settings/models')} accessibilityLabel="Models">
           <Ionicons name="ellipsis-horizontal" size={18} color={colors.text} />
@@ -117,7 +125,7 @@ export default function Chat() {
           {!model ? (
             <View style={styles.empty}>
               <Text style={styles.emptyText}>
-                Install Llama 3.2 in Settings › Models to chat offline.
+                Install a chat model in Settings › Models to chat offline.
               </Text>
               <PrimaryButton
                 label="Open models"

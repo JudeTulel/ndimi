@@ -9,6 +9,7 @@ export const ONBOARDING_COMPLETE = 'onboarding_complete';
 
 const DEFAULT_DIRECTION = 'default_direction';
 const OFFLINE_MODE = 'offline_mode';
+const ACTIVE_CHAT_MODEL = 'active_chat_model';
 
 export type Direction = 'en-sw' | 'sw-en';
 
@@ -37,4 +38,21 @@ export async function getOfflineMode(): Promise<boolean> {
 
 export async function setOfflineMode(enabled: boolean): Promise<void> {
   await setPref(OFFLINE_MODE, enabled ? 'true' : 'false');
+}
+
+/**
+ * Which installed chat model the assistant uses. Several chat models can be
+ * installed side by side, so the choice has to be explicit rather than "whichever
+ * entry the catalog lists first". A null value means the default.
+ */
+export async function getActiveChatModel(): Promise<string | null> {
+  return await getPref(ACTIVE_CHAT_MODEL);
+}
+
+export async function setActiveChatModel(id: string): Promise<void> {
+  await setPref(ACTIVE_CHAT_MODEL, id);
+}
+
+export async function clearActiveChatModel(): Promise<void> {
+  await setPref(ACTIVE_CHAT_MODEL, '');
 }

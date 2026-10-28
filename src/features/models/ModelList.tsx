@@ -1,8 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { DownloadProgress } from '../../components/DownloadProgress';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { colors, radius, spacing, type } from '../../theme/tokens';
+import {
+  getInUseChatId,
+  loadActiveChatModel,
+  setActiveChat,
+  subscribeActiveChat,
+} from '../chat/chatService';
 import { CATALOG, formatBytes, type CatalogModel, type ModelTask } from './catalog';
 import {
   cancelDownload,
@@ -30,6 +37,13 @@ type Props = {
  * the Settings model manager so both stay identical.
  */
 export function ModelList({ status, free }: Props) {
+  const [activeChat, setActive] = useState<string | null>(getInUseChatId());
+
+  useEffect(() => {
+    void loadActiveChatModel();
+    return subscribeActiveChat(() => setActive(getInUseChatId()));
+  }, []);
+
   return (
     <>
       {TASKS.map((task) => {
@@ -52,6 +66,7 @@ export function ModelList({ status, free }: Props) {
                 model={model}
                 state={status[model.id] ?? { status: 'absent' }}
                 free={free}
+                active={activeChat === model.id}
               />
             ))}
           </View>
@@ -65,28 +80,51 @@ function ModelCard({
   model,
   state,
   free,
+  active,
 }: {
   model: CatalogModel;
   state: ModelState;
   free: number | null;
+  active: boolean;
 }) {
   // Only block a fresh download when free space genuinely cannot hold it.
-  const tooBig = free !== null && state.status === 'absent' && free < model.sizeBytes * 1.1;
+  const tooBig =
+    free !== null &&
+    state.status === 'absent' &&
+    free < (model.sizeBytes + (model.projection?.sizeBytes ?? 0)) * 1.1;
 
   return (
     <View style={[styles.card, state.status === 'installed' && styles.cardDone]}>
       <View style={styles.cardHead}>
         <View style={styles.cardTitles}>
-          <Text style={styles.cardTitle}>{model.title}</Text>
+          <View style={styles.cardTitleRow}>
+            <Text style={styles.cardTitle}>{model.title}</Text>
+            {active ? (
+              <View style={styles.activePill}>
+                <Text style={styles.activeText}>IN USE</Text>
+              </View>
+            ) : null}
+          </View>
           <Text style={styles.cardMeta}>
-            {model.quantization} · {formatBytes(model.sizeBytes)} · {model.licence}
+            {model.quantization} ·{' '}
+            {formatBytes(model.sizeBytes + (model.projection?.sizeBytes ?? 0))} ·{' '}
+            {model.licence}
             {/* Speech models are language-scoped, so say which before install. */}
             {model.task === 'asr'
               ? ` · ${model.languages.map((l) => l.toUpperCase()).join('/')} only`
               : ''}
+            {/* A multimodal install is two files; say so rather than let the size jump. */}
+            {model.projection ? ' · weights + image projector' : ''}
           </Text>
         </View>
-        <ModelAction model={model} state={state} tooBig={tooBig} />
+        <View style={styles.actions}>
+          {/* Several chat models can be installed at once, so the assistant needs to
+              be told which one to run. Only offered for installed chat entries. */}
+          {model.task === 'chat' && state.status === 'installed' && !active ? (
+            <PrimaryButton label="Use" compact variant="ghost" onPress={() => void setActiveChat(model.id)} />
+          ) : null}
+          <ModelAction model={model} state={state} tooBig={tooBig} />
+        </View>
       </View>
 
       <Text style={styles.cardBody}>{model.summary}</Text>
@@ -197,6 +235,15 @@ const styles = StyleSheet.create({
   cardDone: { borderColor: colors.successSoft },
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   cardTitles: { flex: 1, gap: 2 },
+  cardTitleRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: spacing.xs },
+  activePill: {
+    backgroundColor: colors.dark,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+  },
+  activeText: { ...type.label, fontSize: 9, color: '#FFFFFF' },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   cardTitle: { ...type.cardTitle, color: colors.text },
   cardMeta: { ...type.body, fontSize: 11, color: colors.secondaryText },
   cardBody: { ...type.body, color: colors.secondaryText },

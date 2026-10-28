@@ -1,5 +1,5 @@
 import { translateText, type TranslationLanguage } from '../../features/translate/translationService';
-import { transcribeFile } from '../../features/voice/asrService';
+import { transcribeFile, unloadAsrModel } from '../../features/voice/asrService';
 
 /**
  * Recorded-audio → transcript → translation.
@@ -32,6 +32,12 @@ export async function runVoiceTranslation(
   const transcript = await transcribeFile(input.audioUri, input.from, session);
   if (session.cancelled) return null;
   if (!transcript) throw new Error('No speech was recognised. Try again, closer to the mic.');
+
+  // Release the speech weights before the translation model is loaded. Leaving the
+  // ASR handle open holds its weights resident, so the next load has to fit both, and
+  // on a mid-range phone that is what pushes the process over. The transcript is the
+  // only thing the next stage needs, and the file has already been read.
+  await unloadAsrModel();
 
   onUpdate({ stage: 'translating' });
   const translation = await translateText(

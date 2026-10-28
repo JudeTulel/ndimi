@@ -100,7 +100,9 @@ export async function translateText(
 
   const run = translate({
     modelId: warm.modelId,
-    modelType: 'llamacpp-completion',
+    // `llm` is the alias the API reference documents; the runtime normalises it to
+    // `llamacpp-completion` and then checks it against the *loaded* model's type.
+    modelType: 'llm',
     text: input.text,
     from: input.from,
     to: input.to,

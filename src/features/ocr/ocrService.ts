@@ -1,12 +1,17 @@
-import { loadModel, ocr, unloadModel } from '@qvac/sdk';
+import { completion, loadModel, ocr, unloadModel } from '@qvac/sdk';
 import * as FileSystem from 'expo-file-system/legacy';
 import { toRuntimePath } from '../../core/fs/paths';
 import { getOfflineMode } from '../../core/db/settings';
+import { CATALOG } from '../models/catalog';
 import { getSnapshot } from '../models/modelStore';
+
+const MODEL_DIR = `${FileSystem.documentDirectory}models/`;
 
 type Loaded = { modelId: string };
 
 let loaded: Loaded | null = null;
+/** True when the loaded handle is a vision model, which answers instead of reading. */
+let vision = false;
 
 /**
  * OCR runs the ggml-ocr easyocr pipeline: a CRAFT detector plus a CRNN Latin
@@ -39,26 +44,60 @@ export function ocrWarm(): boolean {
 async function ensureModel(): Promise<string> {
   if (loaded) return loaded.modelId;
 
-  // Prefer the installed, checksummed local copy. Falling back to the
-  // `registry://` source is what made a cold run a silent multi-minute download
-  // with no progress: the runtime fetched both artifacts itself. Now that the
-  // catalog downloads them, the normal path is a plain local file.
-  const state = getSnapshot()['ocr-latin-g2'];
-  const modelSrc =
-    state?.status === 'installed' ? toRuntimePath(state.localPath) : RECOGNIZER;
+  // Whichever OCR-capable model is installed, preferring a downloaded one over the
+  // registry fallback. A vision model wins when present because it is the more
+  // capable reader; its projector is part of its install.
+  const snapshot = getSnapshot();
+  const installed = CATALOG.filter(
+    (m) => m.task === 'ocr' && snapshot[m.id]?.status === 'installed'
+  );
+  const visionModel = installed.find((m) => m.projection);
+  const chosen = visionModel
+    ? snapshot[visionModel.id]
+    : snapshot['ocr-latin-g2']?.status === 'installed'
+      ? snapshot['ocr-latin-g2']
+      : null;
 
-  const modelId = await loadModel({
-    modelSrc,
-    modelType: 'ggml-ocr',
-    modelConfig: {
-      pipelineType: 'easyocr',
-      langList: ['en'],
-      // Mobile memory cannot hold the 2560 default detection canvas.
-      canvasSize: 1280,
-    },
-  });
-  loaded = { modelId };
-  return modelId;
+  vision = !!visionModel;
+
+  const modelSrc =
+    chosen && chosen.status === 'installed' ? toRuntimePath(chosen.localPath) : RECOGNIZER;
+
+  if (visionModel) {
+    loaded = {
+      modelId: await loadModel({
+        modelSrc,
+        modelType: 'llamacpp-completion',
+        modelConfig: {
+          ctx_size: 2048,
+          ...(visionModel.projection
+            ? {
+                projectionModelSrc: toRuntimePath(
+                  `${MODEL_DIR}${visionModel.projection.filename}`
+                ),
+              }
+            : {}),
+        },
+      }),
+    };
+    vision = true;
+    return loaded.modelId;
+  }
+
+  loaded = {
+    modelId: await loadModel({
+      modelSrc,
+      modelType: 'ggml-ocr',
+      modelConfig: {
+        pipelineType: 'easyocr',
+        langList: ['en'],
+        // Mobile memory cannot hold the 2560 default detection canvas.
+        canvasSize: 1280,
+      },
+    }),
+  };
+  vision = false;
+  return loaded.modelId;
 }
 
 export async function unloadOcrModel(): Promise<void> {
@@ -89,6 +128,26 @@ export async function readText(base64Jpeg: string): Promise<string> {
   });
 
   try {
+    // A vision model has no text-block API; it is asked in words and answers in words.
+    // The prompt is deliberately extractive so it returns the page rather than a
+    // description of the page.
+    if (vision) {
+      const run = completion({
+        modelId,
+        history: [
+          {
+            role: 'user',
+            content:
+              'Transcribe all the text in this image exactly as written, line by line. Return only the text, with no commentary.',
+            attachments: [{ path: toRuntimePath(tempUri) }],
+          },
+        ],
+        stream: false,
+      });
+      const final = await run.final;
+      return (final.contentText ?? '').trim();
+    }
+
     const run = ocr({
       modelId,
       image: toRuntimePath(tempUri),

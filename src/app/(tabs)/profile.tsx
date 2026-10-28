@@ -74,7 +74,7 @@ export default function Profile() {
 
   return (
     <Screen tabBar={false}>
-      <Text style={styles.title}>Profile</Text>
+      <Text style={styles.title}>Settings</Text>
 
       <View style={styles.card}>
         <Text style={styles.cardLabel}>MODELS</Text>
@@ -144,7 +144,7 @@ export default function Profile() {
         <Ionicons name="chevron-forward" size={18} color={colors.secondaryText} />
       </Pressable>
 
-      <Text style={styles.section}>Settings</Text>
+      <Text style={styles.section}>Manage</Text>
 
       <SettingRow
         icon="cube-outline"

@@ -28,6 +28,17 @@ export type CatalogModel = {
    * can be verified and resumed like any other artifact.
    */
   runtimeManaged?: boolean;
+  /**
+   * Companion projector for a multimodal model. The weights cannot see images on
+   * their own, so this is downloaded alongside and passed as `projectionModelSrc` —
+   * a vision model installed without it loads but is blind.
+   */
+  projection?: {
+    url: string;
+    filename: string;
+    sizeBytes: number;
+    sha256: string;
+  };
 };
 
 const GB = 1024 * 1024 * 1024;
@@ -124,6 +135,84 @@ export const CATALOG: CatalogModel[] = [
     runtimePlugin: 'llamacpp-completion',
     languages: ['en', 'sw'],
     quantization: 'Q4_K_M',
+  },
+  {
+    id: 'qwen2.5-0.5b-instruct-q4',
+    task: 'chat',
+    title: 'Qwen2.5 0.5B Instruct',
+    summary:
+      'Smallest general chat model at 469 MB, and the fastest to answer. Suits short questions and quick writing help.',
+    url: 'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/9217f5db79a29953eb74d5343926648285ec7e67/qwen2.5-0.5b-instruct-q4_k_m.gguf',
+    repo: 'Qwen/Qwen2.5-0.5B-Instruct-GGUF',
+    revision: '9217f5db79a29953eb74d5343926648285ec7e67',
+    filename: 'qwen2.5-0.5b-instruct-q4_k_m.gguf',
+    sizeBytes: 491_400_032,
+    sha256: '74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db',
+    licence: 'Apache-2.0',
+    publisher: 'Qwen',
+    runtimePlugin: 'llamacpp-completion',
+    languages: ['en', 'sw'],
+    quantization: 'Q4_K_M',
+  },
+  {
+    id: 'qwen2.5-1.5b-instruct-q4',
+    task: 'chat',
+    title: 'Qwen2.5 1.5B Instruct',
+    summary:
+      'Better reasoning and longer answers than the 0.5B at 1.04 GB. Good balance for everyday chat on a mid-range phone.',
+    url: 'https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/91cad51170dc346986eccefdc2dd33a9da36ead9/qwen2.5-1.5b-instruct-q4_k_m.gguf',
+    repo: 'Qwen/Qwen2.5-1.5B-Instruct-GGUF',
+    revision: '91cad51170dc346986eccefdc2dd33a9da36ead9',
+    filename: 'qwen2.5-1.5b-instruct-q4_k_m.gguf',
+    sizeBytes: 1_117_320_736,
+    sha256: '6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e',
+    licence: 'Apache-2.0',
+    publisher: 'Qwen',
+    runtimePlugin: 'llamacpp-completion',
+    languages: ['en', 'sw'],
+    quantization: 'Q4_K_M',
+  },
+  {
+    id: 'qwen2.5-3b-instruct-q3',
+    task: 'chat',
+    title: 'Qwen2.5 3B Instruct',
+    summary:
+      'Strongest chat quality here at 1.61 GB. Quantized to Q3_K_M so it still fits under 2 GB; wants a phone with 6 GB RAM or more.',
+    url: 'https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/7dabda4d13d513e3e842b20f0d435c732f172cbe/qwen2.5-3b-instruct-q3_k_m.gguf',
+    repo: 'Qwen/Qwen2.5-3B-Instruct-GGUF',
+    revision: '7dabda4d13d513e3e842b20f0d435c732f172cbe',
+    filename: 'qwen2.5-3b-instruct-q3_k_m.gguf',
+    sizeBytes: 1_724_178_848,
+    sha256: 'ba8627a48c2bddefac2f995caf7887551304f26a72137fb94b74449121d0df4e',
+    licence: 'Qwen Research',
+    publisher: 'Qwen',
+    runtimePlugin: 'llamacpp-completion',
+    languages: ['en', 'sw'],
+    quantization: 'Q3_K_M',
+  },
+  {
+    id: 'smolvlm-500m-q4',
+    task: 'ocr',
+    title: 'SmolVLM 500M (read a photo)',
+    summary:
+      'Vision model that reads a photo and answers about it. Slower than the Latin reader but handles mixed layouts and handwriting.',
+    url: 'https://huggingface.co/mradermacher/SmolVLM-500M-Base-GGUF/resolve/feec39cd757b4b6ce015bc7fbd7bb27d131c17fd/SmolVLM-500M-Base.Q4_K_M.gguf',
+    repo: 'mradermacher/SmolVLM-500M-Base-GGUF',
+    revision: 'feec39cd757b4b6ce015bc7fbd7bb27d131c17fd',
+    filename: 'SmolVLM-500M-Base.Q4_K_M.gguf',
+    sizeBytes: 303_249_280,
+    sha256: 'ea4fd9cd04c6336ceb90c7df7dc6ec473ae5af36ffe3fb8eff6e06d6731bbd0a',
+    licence: 'Apache-2.0',
+    publisher: 'mradermacher',
+    runtimePlugin: 'llamacpp-completion',
+    languages: ['en', 'sw'],
+    quantization: 'Q4_K_M',
+    projection: {
+      url: 'https://huggingface.co/mradermacher/SmolVLM-500M-Base-GGUF/resolve/feec39cd757b4b6ce015bc7fbd7bb27d131c17fd/SmolVLM-500M-Base.mmproj-Q8_0.gguf',
+      filename: 'SmolVLM-500M-Base.mmproj-Q8_0.gguf',
+      sizeBytes: 108_782_176,
+      sha256: '07088c0e7f9ea56c85453c01d2dbbb1a85e558ec41e989dd024710aa4b6b9c30',
+    },
   },
   {
     id: 'ocr-latin-g2',

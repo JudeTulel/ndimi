@@ -68,28 +68,43 @@ export default function Voice() {
   );
   const ready = !!asr && !!nmt;
 
+  // `phase` cannot guard this on its own: it only updates after the awaits below, so a
+  // second tap lands while the first `prepareToRecordAsync` is still running and the
+  // recorder throws "already been prepared". A ref flips synchronously.
+  const startingRef = useRef(false);
+
   const start = async () => {
+    if (startingRef.current) return;
+    startingRef.current = true;
+
     setError(null);
     setTranscript('');
     setTranslation('');
     setStage(null);
 
-    const existing = await getRecordingPermissionsAsync();
-    let granted = existing.granted;
-    if (!granted) granted = (await requestRecordingPermissionsAsync()).granted;
-    if (!granted) {
-      setPhase('denied');
-      return;
-    }
-
     try {
-      await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
-      await recorder.start();
-      session.current = { cancelled: false };
-      setPhase('listening');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not start the microphone.');
-      setPhase('error');
+      const existing = await getRecordingPermissionsAsync();
+      let granted = existing.granted;
+      if (!granted) granted = (await requestRecordingPermissionsAsync()).granted;
+      if (!granted) {
+        setPhase('denied');
+        return;
+      }
+
+      try {
+        await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
+        await recorder.start();
+        session.current = { cancelled: false };
+        setPhase('listening');
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not start the microphone.');
+        setPhase('error');
+      }
+    } finally {
+      // Released on every path so a denied permission or a failed start can be retried.
+      // Once listening, the button is a different control anyway, so a stale guard here
+      // would only bite the "Record again" flow.
+      startingRef.current = false;
     }
   };
 
@@ -268,7 +283,10 @@ export default function Voice() {
             label="Record again"
             variant="ghost"
             onPress={() => {
-              void discard().then(start);
+              void (async () => {
+                await discard();
+                await start();
+              })();
             }}
           />
         ) : (

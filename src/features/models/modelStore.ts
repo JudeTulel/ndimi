@@ -6,6 +6,7 @@ import { unloadTranslationModel } from '../translate/translationService';
 import { unloadChatModel } from '../chat/chatService';
 import { unloadOcrModel } from '../ocr/ocrService';
 import { toRuntimePath } from '../../core/fs/paths';
+import { readFileBytes } from './bytes';
 import { cancel, downloadAsset, loadModel, unloadModel } from '@qvac/sdk';
 import {
   CATALOG,
@@ -47,6 +48,15 @@ function partUri(model: CatalogModel): string {
 
 function finalUri(model: CatalogModel): string {
   return `${MODEL_DIR}${model.filename}`;
+}
+
+/**
+ * The projector sits beside the weights under its own published name. Deriving the
+ * path rather than storing a column keeps the schema unchanged; there is no basename
+ * detection to satisfy because the runtime is handed this path explicitly.
+ */
+function projectionUri(model: CatalogModel): string | null {
+  return model.projection ? `${MODEL_DIR}${model.projection.filename}` : null;
 }
 
 const downloaders = new Map<string, FileSystem.DownloadResumable>();
@@ -123,6 +133,50 @@ export function subscribe(fn: (map: ModelStatusMap) => void): () => void {
 
 export function getSnapshot(): ModelStatusMap {
   return { ...snapshot };
+}
+
+/**
+ * Records an adopted (user-supplied) file as an install of a catalog entry.
+ *
+ * The row id is the catalog id, so every existing lookup — the task pickers, the
+ * model list, the inference adapters — resolves an adopted file exactly like a
+ * downloaded one. A previously installed copy of the same entry is unloaded and
+ * deleted first: two rows cannot share the primary key, and silently leaving the old
+ * file behind would keep two copies of a 641 MB artifact on disk.
+ */
+export async function adoptInstalled(
+  model: CatalogModel,
+  localPath: string,
+  sha256: string
+): Promise<void> {
+  if (model.task === 'translation') await unloadTranslationModel();
+  if (model.task === 'asr') await unloadAsrModel();
+  if (model.task === 'chat') await unloadChatModel();
+  if (model.task === 'ocr') await unloadOcrModel();
+
+  await ensureSchema();
+  const db = await getDatabase();
+  const previous = await db.getFirstAsync<{ local_path: string }>(
+    'SELECT local_path FROM models WHERE id = ?',
+    model.id
+  );
+  if (previous?.local_path && previous.local_path !== localPath) {
+    if (!previous.local_path.startsWith('registry://')) {
+      await FileSystem.deleteAsync(previous.local_path, { idempotent: true }).catch(() => {});
+    }
+  }
+
+  const installedAt = new Date().toISOString();
+  await db.runAsync(
+    'INSERT OR REPLACE INTO models (id, task, local_path, sha256, installed_at) VALUES (?, ?, ?, ?, ?)',
+    model.id,
+    model.task,
+    localPath,
+    sha256,
+    installedAt
+  );
+
+  setState(model.id, { status: 'installed', localPath, installedAt });
 }
 
 async function ensureSchema() {
@@ -271,6 +325,13 @@ export async function startDownload(model: CatalogModel): Promise<void> {
     }
     downloaders.delete(model.id);
     await verifyAndInstall(model);
+
+    // The projector is what makes an image reach the weights, so it is part of the
+    // install rather than an optional extra. Fetched after the main artifact to keep
+    // one transfer at a time; the total is shown as a single figure.
+    if (model.projection) {
+      await fetchProjection(model);
+    }
   } catch (error) {
     downloaders.delete(model.id);
     // Bytes fetched so far are still good, so report a resumable pause instead of
@@ -294,6 +355,80 @@ export async function startDownload(model: CatalogModel): Promise<void> {
 async function sizeOf(uri: string): Promise<number> {
   const info = await FileSystem.getInfoAsync(uri);
   return info.exists ? (info.size ?? 0) : 0;
+}
+
+/**
+ * Fetches and verifies the projector companion.
+ *
+ * A checksum mismatch deletes both halves: weights without their projector load fine
+ * but silently see nothing, and that is worse than a clean failure the user can retry.
+ */
+async function fetchProjection(model: CatalogModel): Promise<void> {
+  const projection = model.projection;
+  const target = projectionUri(model);
+  if (!projection || !target) return;
+
+  setState(model.id, {
+    status: 'downloading',
+    progress: 0,
+    bytesWritten: 0,
+    totalBytes: projection.sizeBytes,
+  });
+
+  const part = `${target}.part`;
+  await FileSystem.deleteAsync(part, { idempotent: true }).catch(() => {});
+
+  try {
+    const task = FileSystem.createDownloadResumable(
+      projection.url,
+      part,
+      {},
+      (data) => {
+        const total = data.totalBytesExpectedToWrite || projection.sizeBytes;
+        setState(model.id, {
+          status: 'downloading',
+          progress: total > 0 ? data.totalBytesWritten / total : 0,
+          bytesWritten: data.totalBytesWritten,
+          totalBytes: total,
+        });
+      }
+    );
+    downloaders.set(model.id, task);
+    const result = await task.downloadAsync();
+    downloaders.delete(model.id);
+    if (!result) return;
+
+    const actual = await Crypto.digest(
+      Crypto.CryptoDigestAlgorithm.SHA256,
+      (await readFileBytes(part)) as unknown as BufferSource
+    );
+    const hex = Array.from(new Uint8Array(actual))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    if (hex !== projection.sha256) {
+      await FileSystem.deleteAsync(part, { idempotent: true }).catch(() => {});
+      await FileSystem.deleteAsync(finalUri(model), { idempotent: true }).catch(() => {});
+      setState(model.id, {
+        status: 'failed',
+        message: 'The image projector failed its checksum, so the model was removed.',
+      });
+      return;
+    }
+
+    await FileSystem.moveAsync({ from: part, to: target });
+    const state = snapshot[model.id];
+    if (state?.status !== 'installed') return;
+    setState(model.id, state);
+  } catch (error) {
+    downloaders.delete(model.id);
+    setState(model.id, {
+      status: 'failed',
+      message: `The weights are installed but the image projector failed: ${
+        error instanceof Error ? error.message : 'download failed'
+      }`,
+    });
+  }
 }
 
 /**
@@ -510,78 +645,57 @@ async function installRuntimeManaged(model: CatalogModel): Promise<void> {
  * the smoke test proves the real path rather than a permissive one.
  */
 async function loadRuntimeModel(model: CatalogModel): Promise<string> {
+  return loadRuntimeModelAt(model, finalUri(model));
+}
+
+/**
+ * Loads an arbitrary file through the config its task uses. Exposed so an adopted
+ * (user-supplied) copy is probed exactly like a downloaded one instead of through a
+ * second, subtly different load.
+ */
+export async function loadRuntimeModelAt(model: CatalogModel, path: string): Promise<string> {
+  // A multimodal entry is a completion model with a projector, not an OCR pipeline:
+  // it answers free-form prompts about the image rather than returning text blocks.
+  if (model.projection) {
+    const projector = projectionUri(model);
+    return loadModel({
+      modelSrc: toRuntimePath(path),
+      modelType: 'llamacpp-completion',
+      modelConfig: {
+        ctx_size: 2048,
+        ...(projector && (await fileExists(projector))
+          ? { projectionModelSrc: toRuntimePath(projector) }
+          : {}),
+      },
+    });
+  }
+
   switch (model.task) {
     case 'ocr':
       return loadModel({
-        modelSrc: model.runtimeManaged ? model.url : toRuntimePath(finalUri(model)),
+        modelSrc: model.runtimeManaged ? model.url : toRuntimePath(path),
         modelType: 'ggml-ocr',
         modelConfig: { pipelineType: 'easyocr', langList: ['en'], canvasSize: 1280 },
       });
     case 'translation':
       return loadModel({
-        modelSrc: toRuntimePath(finalUri(model)),
+        modelSrc: toRuntimePath(path),
         modelType: 'llamacpp-completion',
         modelConfig: { ctx_size: 2048, verbosity: 0 },
       });
     case 'chat':
       return loadModel({
-        modelSrc: toRuntimePath(finalUri(model)),
+        modelSrc: toRuntimePath(path),
         modelType: 'llamacpp-completion',
         modelConfig: { ctx_size: 2048 },
       });
     case 'asr':
       return loadModel({
-        modelSrc: toRuntimePath(finalUri(model)),
+        modelSrc: toRuntimePath(path),
         modelType: 'whispercpp-transcription',
         modelConfig: { strategy: 'greedy', no_timestamps: true, n_threads: 4 },
       });
   }
-}
-
-/**
- * Reading the whole artifact into one array gives expo-crypto a single digest
- * input; model files are hundreds of MB, which stays inside RN's array limits.
- */
-async function readFileBytes(uri: string): Promise<Uint8Array> {
-  const chunks: Uint8Array[] = [];
-  const info = await FileSystem.getInfoAsync(uri);
-  const total = info.exists ? info.size : 0;
-  const chunkSize = 4 * 1024 * 1024;
-
-  for (let offset = 0; offset < total; offset += chunkSize) {
-    const chunk = await FileSystem.readAsStringAsync(uri, {
-      encoding: FileSystem.EncodingType.Base64,
-      position: offset,
-      length: Math.min(chunkSize, total - offset),
-    });
-    chunks.push(base64ToBytes(chunk));
-  }
-
-  const out = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
-  let at = 0;
-  for (const chunk of chunks) {
-    out.set(chunk, at);
-    at += chunk.length;
-  }
-  return out;
-}
-
-function base64ToBytes(value: string): Uint8Array {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  const clean = value.replace(/[^A-Za-z0-9+/]/g, '');
-  const out = new Uint8Array(Math.floor((clean.length * 3) / 4));
-  let bits = 0;
-  let acc = 0;
-  let index = 0;
-  for (let i = 0; i < clean.length; i++) {
-    acc = (acc << 6) | alphabet.indexOf(clean[i]);
-    bits += 6;
-    if (bits >= 8) {
-      bits -= 8;
-      out[index++] = (acc >> bits) & 0xff;
-    }
-  }
-  return out.subarray(0, index);
 }
 
 /**
@@ -636,6 +750,13 @@ export async function remove(model: CatalogModel): Promise<void> {
   if (!model.runtimeManaged) {
     await FileSystem.deleteAsync(finalUri(model), { idempotent: true });
     await FileSystem.deleteAsync(partUri(model), { idempotent: true });
+  }
+
+  // The projector is only useful to this model, and would otherwise be stranded.
+  const projector = projectionUri(model);
+  if (projector) {
+    await FileSystem.deleteAsync(projector, { idempotent: true });
+    await FileSystem.deleteAsync(`${projector}.part`, { idempotent: true });
   }
   setState(model.id, { status: 'absent' });
 }
