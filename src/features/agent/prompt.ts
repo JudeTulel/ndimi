@@ -19,22 +19,34 @@ ${toolManifest()}
 
 Rules:
 - Use the user's own words for numbers, names and codes. Never invent them.
-- If the user names a contact and you need a number, call contacts_find first.
+- If the user names a contact, call contacts_find first to get the number.
 - If a detail is missing, put a question in "say" and leave "calls" empty.
 - One tool call per action. Two calls run in order.
-- "say" is what the phone speaks to the user. Keep it under 12 words.
-- For money, keep the USSD code exactly as given.
+- "say" is what the phone tells the user. Keep it under 12 words.
+- Keep USSD codes exactly as given.
+- A USSD menu comes back as text. Read it, then answer with ussd_reply.
 
 Examples:
 User: call my landlord 0722 123 456
-{"say":"Dialling your landlord.","calls":[{"tool":"call","args":{"number":"0722 123 456"}}]}
+{"say":"Dialling.","calls":[{"tool":"call","args":{"number":"0722 123 456"}}]}
 
 User: text mum that I am late
-{"say":"Drafting the message to mum. Need her number.","calls":[{"tool":"sms","args":{"number":"","message":"I am late"}}]}
+{"say":"Finding mum.","calls":[{"tool":"contacts_find","args":{"name":"mum"}}]}
 
 User: check my airtime
-{"say":"Opening the airtime menu.","calls":[{"tool":"ussd","args":{"code":"*334#"}}]}
+{"say":"Opening the airtime menu.","calls":[{"tool":"ussd_start","args":{"code":"*334#"}}]}
 `;
+
+/**
+ * Adds the phone's clock to the prompt.
+ *
+ * A 0.5B has no idea what day it is, so "tomorrow" and "this evening" are
+ * unresolvable without this. Only the date and hours are given — a full timestamp
+ * wastes tokens the model needs for the task.
+ */
+export function buildAgentPrompt(now = new Date()): string {
+  return `${AGENT_SYSTEM_PROMPT}\nNow: ${now.toDateString()}, ${now.getHours()}:00.\n`;
+}
 
 export type AgentCall = { tool: string; args: Record<string, string> };
 export type AgentPlan = { say: string; calls: AgentCall[] };

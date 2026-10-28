@@ -1,5 +1,5 @@
 import { streamChat, type ChatMessage } from '../chat/chatService';
-import { AGENT_SYSTEM_PROMPT, parsePlan, type AgentPlan } from './prompt';
+import { buildAgentPrompt, parsePlan, type AgentPlan } from './prompt';
 import { runPlan, type StepResult } from './runner';
 
 /** Rounds of model → tool → model. Three is enough for a USSD menu and a confirm. */
@@ -41,7 +41,7 @@ export async function runAgentTurn(
         if (round === 0) onSay(partial);
       },
       signal,
-      AGENT_SYSTEM_PROMPT
+      buildAgentPrompt()
     );
 
     const plan: AgentPlan = parsePlan(reply);
