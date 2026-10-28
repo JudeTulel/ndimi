@@ -1,4 +1,5 @@
 import { Linking, Platform } from 'react-native';
+import { requirePermission } from './permissions';
 import { latestFrom, latestMessages, sendSms, summarise } from './sms';
 import { replyToSession, startSession } from './ussd';
 
@@ -73,6 +74,7 @@ export const TOOLS: ToolSpec[] = [
       const number = normaliseNumber(args.number ?? '');
       const message = (args.message ?? '').trim();
       if (!message) throw new Error('No message text given.');
+      await requirePermission('sms-send');
       await sendSms(number, message);
       return `Sent to ${number}.`;
     },
@@ -82,6 +84,7 @@ export const TOOLS: ToolSpec[] = [
     description: 'Read the newest inbox messages, optionally from one sender.',
     args: 'sender?, count?',
     run: async (args) => {
+      await requirePermission('sms-read');
       const count = Number(args.count ?? 5) || 5;
       const rows = args.sender
         ? await latestFrom(args.sender, count)
