@@ -14,6 +14,7 @@ import {
   type ChatMessage,
 } from '../../features/chat/chatService';
 import { runAgentTurn } from '../../features/agent/agentService';
+import { accessibilityReady, openAccessibilitySettings } from '../../features/agent/ussd';
 import { useKeyboardHeight } from '../../core/ui/useKeyboardHeight';
 
 type Bubble = ChatMessage & { id: string; streaming?: boolean; steps?: string };
@@ -44,7 +45,9 @@ function partOfDay(): string {
   return 'evening';
 }
 
-/** One-tap starts, tuned per mode: prompts in chat, real jobs in agent. */
+/**
+ * One-tap starts, tuned per mode: prompts in chat, real jobs in agent.
+ */
 const SUGGESTIONS: Record<Mode, string[]> = {
   chat: [
     'Explain photosynthesis simply',
@@ -63,6 +66,7 @@ export default function Assistant() {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [a11y, setA11y] = useState<boolean | null>(null);
   const scroller = useRef<ScrollView>(null);
   const cancelSignal = useRef({ cancelled: false });
   const [, forceRender] = useState(0);
@@ -76,6 +80,19 @@ export default function Assistant() {
   }, []);
 
   useEffect(() => () => { cancelSignal.current.cancelled = true; }, []);
+
+  // The service can be switched on outside the app, so it is re-checked whenever the
+  // screen comes back to agent mode rather than only once on mount.
+  useEffect(() => {
+    if (mode !== 'agent') return;
+    let live = true;
+    void accessibilityReady()
+      .then((on) => live && setA11y(on))
+      .catch(() => live && setA11y(null));
+    return () => {
+      live = false;
+    };
+  }, [mode]);
 
   const stop = () => {
     cancelSignal.current.cancelled = true;
@@ -178,6 +195,21 @@ export default function Assistant() {
       </View>
 
       <View style={styles.flex}>
+        {mode === 'agent' && a11y === false ? (
+          <Pressable
+            style={styles.banner}
+            onPress={() => {
+              // The settings screen takes the user away; re-check on return so the
+              // banner clears itself once the service is on.
+              void openAccessibilitySettings();
+              setTimeout(() => void accessibilityReady().then(setA11y).catch(() => {}), 1200);
+            }}>
+            <Ionicons name="alert-circle-outline" size={15} color={colors.greenInk} />
+            <Text style={styles.bannerText}>
+              Turn on Ndimi in Accessibility settings to let the agent use USSD menus.
+            </Text>
+          </Pressable>
+        ) : null}
         <ScrollView
           ref={scroller}
           contentContainerStyle={styles.thread}
@@ -307,6 +339,20 @@ const styles = StyleSheet.create({
   modeText: { ...type.label, fontSize: 11, color: colors.secondaryText },
   modeTextOn: { color: '#FFFFFF' },
   thread: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md, gap: spacing.sm },
+  banner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.greenWash,
+    borderWidth: 1,
+    borderColor: colors.successSoft,
+    borderRadius: radius.input,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm + 2,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.xs,
+  },
+  bannerText: { ...type.body, fontSize: 11, color: colors.greenInk, flex: 1 },
   greeting: { gap: 2, marginBottom: spacing.sm },
   hello: { ...type.hero, color: colors.secondaryText, fontFamily: type.body.fontFamily },
   question: { ...type.hero, color: colors.greenInk },

@@ -61,3 +61,10 @@ export async function endSession(): Promise<void> {
   open = false;
   await cancelSession().catch(() => {});
 }
+
+/** Whether the accessibility service is on; `null` before it has been checked. */
+export async function accessibilityReady(): Promise<boolean> {
+  return isAccessibilityEnabled();
+}
+
+export { openAccessibilitySettings };
