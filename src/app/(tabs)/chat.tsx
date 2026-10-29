@@ -55,7 +55,7 @@ const SUGGESTIONS: Record<Mode, string[]> = {
     'Translate “good morning” to Swahili',
     'Draft a text to my landlord',
   ],
-  agent: ['Call 0722 000 000', 'Send an SMS to Mum', 'Check my airtime (*334#)', 'What time is it?'],
+  agent: ['Call 0722 000 000', 'Send an SMS to Mum', 'Lipa na mpesa (*334#)', 'What time is it?'],
 };
 
 export default function Assistant() {
