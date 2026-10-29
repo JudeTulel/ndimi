@@ -1,5 +1,8 @@
 {
   "expo": {
+    "web": {
+      "bundler": "metro"
+    },
     "name": "Ndimi Swahili",
     "slug": "ndimi",
     "version": "1.0.0",

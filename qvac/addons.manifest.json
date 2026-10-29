@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "bundleId": "7909fea1ece2e22aeb90807386c77809507e03b16eb0d591604ce84aa66ff2f0",
+  "bundleId": "218178c1e75290f672be59a09a542f2eb138f24c43e573d80248ae3fa43d3f6b",
   "addons": [
     "@qvac/asr-ggml-android-arm64",
     "@qvac/asr-ggml-ios",
