@@ -1,14 +1,7 @@
-import {
-  cancelSession,
-  isAccessibilityEnabled,
-  multisessionUssd,
-  openAccessibilitySettings,
-  sendMessage,
-} from 'react-native-ussd-advanced';
+import { isAccessibilityEnabled, multisessionUssd, openAccessibilitySettings, sendMessage } from 'react-native-ussd-advanced';
 
-/**
- * USSD session wrapper.
- *
+/** USSD session wrapper.
+
  * `react-native-ussd-advanced` drives the dialer through an accessibility service:
  * it types the code, waits for the reply and returns the menu text, then types our
  * answers back. That is the only way to read a menu — `tel:` links show the menu but
@@ -56,15 +49,14 @@ export async function replyToSession(input: string): Promise<UssdResult> {
   return clean(reply);
 }
 
-export async function endSession(): Promise<void> {
-  if (!open) return;
-  open = false;
-  await cancelSession().catch(() => {});
-}
-
 /** Whether the accessibility service is on; `null` before it has been checked. */
 export async function accessibilityReady(): Promise<boolean> {
   return isAccessibilityEnabled();
+}
+
+/** Whether a USSD session is currently open (drives the dialer via the accessibility service). */
+export function ussdSessionOpen(): boolean {
+  return open;
 }
 
 export { openAccessibilitySettings };

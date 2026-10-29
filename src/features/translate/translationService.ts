@@ -3,9 +3,8 @@ import { toRuntimePath } from '../../core/fs/paths';
 import { CATALOG, type CatalogModel } from '../models/catalog';
 import { getSnapshot } from '../models/modelStore';
 
-/**
- * On-device translation adapter.
- *
+/** On-device translation adapter.
+
  * The catalog translation models are TranslatePsy-AfriSLM GGUFs: quantized LLMs
  * running on the llamacpp addon, not the nmt addon. The runtime recognises the
  * artifact by filename and swaps in the model card's exact prompt template and
@@ -17,18 +16,32 @@ export type TranslationLanguage = 'en' | 'sw';
 
 type Loaded = { catalogId: string; path: string; installedAt: string; modelId: string };
 
+/** Per-request in-flight state, keyed by request id. The previous single-global
+ * slot meant one overlapping translation could replace another and cancel only
+ * the second request; now each in-flight request is tracked independently. */
+type InFlight = { requestId: string; cancelled: boolean };
+
+const inflight = new Map<string, InFlight>();
+
+/** The currently loaded translation model (one at a time, kept warm). */
 let loaded: Loaded | null = null;
 
+/** Called when a request finishes or is cancelled so its slot frees up. */
+export function forgetInFlight(requestId: string): void {
+  inflight.delete(requestId);
+}
+
 /** Cancellation state for the in-flight request, if any. */
-let inFlight: { requestId: string; cancelled: boolean } | null = null;
+export function inFlightRequestIds(): string[] {
+  return [...inflight.keys()];
+}
 
 export function installedTranslationModel(): CatalogModel | undefined {
   const snapshot = getSnapshot();
   return CATALOG.find((m) => m.task === 'translation' && snapshot[m.id]?.status === 'installed');
 }
 
-/**
- * Picks the installed translation model and keeps it warm. Safe to call on every
+/** Picks the installed translation model and keeps it warm. Safe to call on every
  * request: a warm model from the same install returns immediately, and a
  * reinstall (new `installedAt`, or a different artifact) forces a reload because
  * the old handle points at a file that was replaced underneath it.
@@ -86,10 +99,25 @@ export function forgetTranslationModel(): void {
 
 export type TranslateSignal = { cancelled: boolean };
 
-/**
- * Streams a translation. `onDelta` receives the growing text so the caller can
- * render tokens as they decode. Resolves with the final text.
- */
+/** Stops a specific in-flight translation by request id, or all of them. */
+export async function cancelTranslation(requestId?: string): Promise<void> {
+  if (requestId) {
+    const item = inflight.get(requestId);
+    if (item) {
+      item.cancelled = true;
+      await cancel({ requestId }).catch(() => {});
+    }
+  } else {
+    for (const [, item] of inflight) {
+      item.cancelled = true;
+      await cancel({ requestId: item.requestId }).catch(() => {});
+    }
+    inflight.clear();
+  }
+}
+
+/** Streams a translation. `onDelta` receives the growing text so the caller can
+ * render tokens as they decode. Resolves with the final text. */
 export async function translateText(
   input: { text: string; from: TranslationLanguage; to: TranslationLanguage },
   onDelta: (partial: string) => void,
@@ -109,28 +137,24 @@ export async function translateText(
     stream: true,
   });
 
-  inFlight = { requestId: run.requestId, cancelled: false };
+  // A unique request id so a stop can target this specific request, even while a
+  // previous translation is still draining its own handle.
+  const requestId = run.requestId;
+  inflight.set(requestId, { requestId, cancelled: false });
 
   let full = '';
   try {
     for await (const token of run.tokenStream) {
       if (signal.cancelled) {
-        await cancel({ requestId: run.requestId }).catch(() => {});
+        await cancel({ requestId }).catch(() => {});
         break;
       }
       full += token;
       onDelta(full);
     }
   } finally {
-    inFlight = null;
+    forgetInFlight(requestId);
   }
 
   return full.trim();
-}
-
-/** Stops the in-flight translation, if any. */
-export async function cancelTranslation(): Promise<void> {
-  if (!inFlight) return;
-  inFlight.cancelled = true;
-  await cancel({ requestId: inFlight.requestId }).catch(() => {});
 }

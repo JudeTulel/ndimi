@@ -29,24 +29,32 @@ export async function runVoiceTranslation(
   session: VoiceSession = { cancelled: false }
 ): Promise<{ transcript: string; translation: string } | null> {
   onUpdate({ stage: 'transcribing' });
-  const transcript = await transcribeFile(input.audioUri, input.from, session);
-  if (session.cancelled) return null;
-  if (!transcript) throw new Error('No speech was recognised. Try again, closer to the mic.');
+  let transcript: string | null = null;
+  try {
+    transcript = await transcribeFile(input.audioUri, input.from, session);
+    if (session.cancelled) return null;
+    if (!transcript) throw new Error('No speech was recognised. Try again, closer to the mic.');
 
-  // Release the speech weights before the translation model is loaded. Leaving the
-  // ASR handle open holds its weights resident, so the next load has to fit both, and
-  // on a mid-range phone that is what pushes the process over. The transcript is the
-  // only thing the next stage needs, and the file has already been read.
-  await unloadAsrModel();
+    // Release the speech weights before the translation model is loaded. Leaving the
+    // ASR handle open holds its weights resident, so the next load has to fit both, and
+    // on a mid-range phone that is what pushes the process over. The transcript is the
+    // only thing the next stage needs, and the file has already been read.
+    await unloadAsrModel();
 
-  onUpdate({ stage: 'translating' });
-  const translation = await translateText(
-    { text: transcript, from: input.from, to: input.to },
-    (partial: string) => onUpdate({ stage: 'translating', partial }),
-    session
-  );
-  if (session.cancelled) return null;
+    onUpdate({ stage: 'translating' });
+    const translation = await translateText(
+      { text: transcript, from: input.from, to: input.to },
+      (partial: string) => onUpdate({ stage: 'translating', partial }),
+      session
+    );
+    if (session.cancelled) return null;
 
-  onUpdate({ stage: 'done', transcript, translation });
-  return { transcript, translation };
+    onUpdate({ stage: 'done', transcript, translation });
+    return { transcript, translation };
+  } finally {
+    // Always release the speech weights, whether transcription succeeded, failed, or
+    // was cancelled. Leaving the ASR handle open holds its weights resident, so a
+    // failed or cancelled run would keep the model resident into the next run.
+    await unloadAsrModel();
+  }
 }

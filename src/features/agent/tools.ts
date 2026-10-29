@@ -6,9 +6,8 @@ import { requirePermission } from './permissions';
 import { latestFrom, latestMessages, sendSms, summarise } from './sms';
 import { replyToSession, startSession } from './ussd';
 
-/**
- * Tools the agent can run on the phone.
- *
+/** Tools the agent can run on the phone.
+
  * Deliberately few and small: a 0.5B–3B on-device model picks from this list, so
  * every tool has a one-clause description and a flat argument shape.
  */
@@ -27,11 +26,9 @@ export function encodeUssd(code: string): string {
   return `tel:${encodeURIComponent(cleaned).replace(/%23/gi, '%23')}`;
 }
 
-/**
- * Strips a number down to something the dialer will take. Models repeat the local
+/** Strips a number down to something the dialer will take. Models repeat the local
  * formatting they saw in the prompt ("0722 000 000", "+254 (722) 000-000"), and
- * spaces or brackets break the `tel:` URI on Android.
- */
+ * spaces or brackets break the `tel:` URI on Android. */
 export function normaliseNumber(raw: string): string {
   const trimmed = raw.trim().replace(/[^\d+*#]/g, '');
   if (!trimmed) throw new Error('No phone number given.');
@@ -147,7 +144,7 @@ export const TOOLS: ToolSpec[] = [
     name: 'clock',
     description: 'Read the current date and time on the phone.',
     args: 'none',
-    run: async () => new Date().toString(),
+    run: async () => new Date().toISOString(),
   },
   {
     name: 'contacts_find',
@@ -168,4 +165,35 @@ export function findTool(name: string): ToolSpec | undefined {
 /** Prompt fragment listing the tools, in the compact form small models follow. */
 export function toolManifest(): string {
   return TOOLS.map((t) => `- ${t.name}(${t.args}): ${t.description}`).join('\n');
+}
+
+/** Matches a contact name and a message off a short free-text request.
+
+ * "text mum that I am late" -> { name: "mum", message: "I am late" }
+ * "text my landlord" -> { name: "landlord", message: "" }
+ */
+export function extractContactAndMessage(raw: string): { name: string; message: string } | null {
+  const trimmed = raw.trim();
+  const m = /^(?:(text|message|sms|send an sms|text my)\b[\s:]*)?(.+)$/.exec(trimmed);
+  if (!m) return null;
+  const rest = m[2]?.trim() ?? '';
+  if (!rest) return null;
+  // Split on the first sentence-ending clause: "that I am late", "because ...".
+  const [name, ...restParts] = rest.split(/\b(?:that|because|and|then)\b/i);
+  const message = restParts.join(' ').trim();
+  return { name: name.trim(), message: message };
+}
+
+/** Strips a number down to something the dialer will take. Models repeat the local
+ * formatting they saw in the prompt ("0722 000 000", "+254 (722) 000-000"), and
+ * spaces or brackets break the `tel:` URI on Android. */
+export function extractContactNumber(raw: string): string | null {
+  const trimmed = raw.trim().replace(/[^\d+*#]/g, '');
+  if (!trimmed) return null;
+  return trimmed;
+}
+
+/** Current date/time. Returns a fixed ISO string plus a short "now" summary. */
+export function clock(): string {
+  return new Date().toISOString();
 }

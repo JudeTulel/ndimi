@@ -53,37 +53,64 @@ export function buildAgentPrompt(now = new Date()): string {
 export type AgentCall = { tool: string; args: Record<string, string> };
 export type AgentPlan = { say: string; calls: AgentCall[] };
 
-/**
- * Parses a model reply into a plan.
- *
- * Small models wrap JSON in fences, prepend "Sure!" or drop the outer braces, so
- * the reply is trimmed to its first object before parsing. When nothing parses the
- * whole reply becomes `say`, which keeps the turn useful instead of throwing.
+/** Collects balanced top-level JSON objects from a reply, preserving adjacency. */
+function collectBalancedJsonObjects(reply: string): string[] {
+  const objects: string[] = [];
+  let i = 0;
+  while (i < reply.length) {
+    const start = reply.indexOf('{', i);
+    if (start === -1) break;
+    const end = findBalancedEnd(reply, start);
+    if (end === -1) break;
+    objects.push(reply.slice(start, end + 1));
+    i = end + 1;
+  }
+  return objects;
+}
+
+/** Finds the index of the closing brace that balances the opening at `start`. */
+function findBalancedEnd(reply: string, start: number): number {
+  let depth = 0;
+  for (let i = start; i < reply.length; i += 1) {
+    const ch = reply[i];
+    if (ch === '{') depth += 1;
+    else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/** Parses a model reply into a plan.
+
+ * Multi-object replies (concatenated JSON fragments without prose) are collected
+ * independently; an object is valid only if it parses as JSON with at least one
+ * real tool call. Prefers a parsed object containing valid tool calls over the
+ * raw reply text.
  */
 export function parsePlan(reply: string): AgentPlan {
-  const start = reply.indexOf('{');
-  const end = reply.lastIndexOf('}');
-  const candidate = start >= 0 && end > start ? reply.slice(start, end + 1) : '';
+  const candidates = collectBalancedJsonObjects(reply);
 
-  try {
-    const raw = JSON.parse(candidate) as {
-      say?: unknown;
-      calls?: unknown;
-      tool?: unknown;
-      args?: unknown;
-    };
+  // Walk the objects in order: the first one that parses as JSON with a valid
+  // tool call is used. Markdown fences and stray prose are skipped.
+  for (const candidate of candidates) {
+    try {
+      const raw = JSON.parse(candidate) as {
+        say?: unknown;
+        calls?: unknown;
+        tool?: unknown;
+        args?: unknown;
+      };
 
-    // Some models emit the single-call shorthand `{"tool":…,"args":…}` even when
-    // told not to. Accept it rather than losing a valid action.
-    const calls = Array.isArray(raw.calls)
-      ? raw.calls
-      : raw.tool
-        ? [{ tool: raw.tool, args: raw.args }]
-        : [];
+      // Single-call shorthand `{"tool":…,"args":…}` is accepted.
+      const calls = Array.isArray(raw.calls)
+        ? raw.calls
+        : raw.tool
+          ? [{ tool: raw.tool, args: raw.args }]
+          : [];
 
-    return {
-      say: typeof raw.say === 'string' ? raw.say : '',
-      calls: calls.flatMap((entry) => {
+      const validCalls = calls.flatMap((entry) => {
         if (!entry || typeof entry !== 'object') return [];
         const { tool, args } = entry as { tool?: unknown; args?: unknown };
         if (typeof tool !== 'string' || !findTool(tool)) return [];
@@ -94,9 +121,18 @@ export function parsePlan(reply: string): AgentPlan {
           }
         }
         return [{ tool, args: clean }];
-      }),
-    };
-  } catch {
-    return { say: reply.trim(), calls: [] };
+      });
+
+      return {
+        say: typeof raw.say === 'string' ? raw.say : '',
+        calls: validCalls,
+      };
+    } catch {
+      continue;
+    }
   }
+
+  // No JSON object parsed to a valid plan. Prefer returning the whole reply as
+  // `say` so the turn stays useful instead of dropping the request.
+  return { say: reply.trim(), calls: [] };
 }

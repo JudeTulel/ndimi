@@ -121,7 +121,10 @@ export const CATALOG: CatalogModel[] = [
     sha256: '4af8ee1df3ec9008f763ebe95e6f21df3acd8d42c541feeb13314ca22e560afc',
     licence: 'Apache-2.0',
     publisher: 'qvac',
-    runtimePlugin: 'nmtcpp-translation',
+    // Verified adapter: the LLM translation path loads TranslatePsy as a
+    // `llamacpp-completion` completion model. The `nmtcpp-translation` plugin is a
+    // convention name in the catalog and must not be used as the load type.
+    runtimePlugin: 'llamacpp-completion',
     languages: ['en', 'sw'],
     quantization: 'Q4_K_M',
   },
@@ -138,7 +141,10 @@ export const CATALOG: CatalogModel[] = [
     sha256: 'fc2a80532e58e0655efd9e68c5b7cb2c4373222e736bcc88de648502a4e30361',
     licence: 'Apache-2.0',
     publisher: 'qvac',
-    runtimePlugin: 'nmtcpp-translation',
+    // Verified adapter: the LLM translation path loads TranslatePsy as a
+    // `llamacpp-completion` completion model. The `nmtcpp-translation` plugin is a
+    // convention name in the catalog and must not be used as the load type.
+    runtimePlugin: 'llamacpp-completion',
     languages: ['en', 'sw'],
     quantization: 'Q4_K_M',
   },

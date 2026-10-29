@@ -3,9 +3,8 @@ import { toRuntimePath } from '../../core/fs/paths';
 import { CATALOG, type CatalogModel } from '../models/catalog';
 import { getSnapshot } from '../models/modelStore';
 
-/**
- * Whisper-on-device speech recognition adapter.
- *
+/** Whisper-on-device speech recognition adapter.
+
  * The addon takes a file path and decodes it itself: `@qvac/decoder-audio` runs
  * FFmpeg to mono 16 kHz s16le, which is what whisper.cpp wants, so the app never
  * resamples. Anything other than a file path (base64/raw buffers) skips that
@@ -16,9 +15,13 @@ type Loaded = { catalogId: string; path: string; installedAt: string; modelId: s
 
 let loaded: Loaded | null = null;
 
-/**
- * The installed speech model for a spoken language.
- *
+/** Cancellation state for the in-flight transcription call. Null before the first
+ * transcribe and after unload — it is the source of truth for whether calling
+ * cancel({ requestId }) is valid. */
+let transcription: { requestId: string; cancelled: boolean } | null = null;
+
+/** The installed speech model for a spoken language.
+
  * Models are language-scoped (the Swahili fine-tune is `sw`-only, the tiny model
  * is `en`-only), so picking the first installed artifact would feed English speech
  * to a Swahili model and get gibberish. Prefer an exact match, then a wildcard,
@@ -77,8 +80,23 @@ async function ensureModel(language: string): Promise<Loaded> {
 
 export async function unloadAsrModel(): Promise<void> {
   if (!loaded) return;
+  if (transcription?.requestId) {
+    await cancel({ requestId: transcription.requestId }).catch(() => {});
+    transcription = null;
+  }
   await unloadModel({ modelId: loaded.modelId }).catch(() => {});
   loaded = null;
+}
+
+/** Cancels the in-flight transcription call and drops the cached model handle. */
+export async function cancelTranscription(): Promise<void> {
+  if (!transcription) return;
+  await cancel({ requestId: transcription.requestId }).catch(() => {});
+  transcription = null;
+  if (loaded) {
+    await unloadModel({ modelId: loaded.modelId }).catch(() => {});
+    loaded = null;
+  }
 }
 
 /** Drops the cached handle after the installed set changes. */
@@ -86,10 +104,8 @@ export function forgetAsrModel(): void {
   loaded = null;
 }
 
-/**
- * Transcribes a recorded file. `signal.cancelled` aborts the decode; the caller
- * discards the (possibly partial) result.
- */
+/** Transcribes a recorded file. `signal.cancelled` aborts the decode; the caller
+ * discards the (possibly partial) result. */
 export async function transcribeFile(
   uri: string,
   language: string,
@@ -99,11 +115,18 @@ export async function transcribeFile(
   if (signal.cancelled) return '';
 
   const call = transcribe({ modelId: warm.modelId, audioChunk: toRuntimePath(uri) });
+  transcription = { requestId: call.requestId, cancelled: false };
+
   const onAbort = () => {
-    void cancel({ requestId: call.requestId }).catch(() => {});
+    void cancel({ requestId: transcription!.requestId }).catch(() => {});
   };
   if (signal.cancelled) onAbort();
 
-  const text = await call;
+  let text: string;
+  try {
+    text = await call;
+  } finally {
+    transcription = null;
+  }
   return text.trim();
 }
