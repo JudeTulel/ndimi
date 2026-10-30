@@ -10,13 +10,26 @@ import { PermissionsAndroid, Platform, type Permission } from 'react-native';
 
 const granted = new Set<Permission>();
 
-const SPEC: Record<'sms-read' | 'sms-send', { permission: Permission; label: string }> = {
+export type AgentPermissionKey = 'sms-read' | 'sms-send' | 'call-phone';
+
+const SPEC: Record<AgentPermissionKey, { permission: Permission; label: string }> = {
   'sms-read': { permission: PermissionsAndroid.PERMISSIONS.READ_SMS, label: 'read your messages' },
   'sms-send': { permission: PermissionsAndroid.PERMISSIONS.SEND_SMS, label: 'send messages' },
+  'call-phone': { permission: PermissionsAndroid.PERMISSIONS.CALL_PHONE, label: 'make phone calls directly' },
 };
 
+/** Checks whether a permission has already been granted. */
+export async function checkPermission(what: AgentPermissionKey): Promise<boolean> {
+  if (Platform.OS !== 'android') return true;
+  const { permission } = SPEC[what];
+  if (granted.has(permission)) return true;
+  const has = await PermissionsAndroid.check(permission);
+  if (has) granted.add(permission);
+  return has;
+}
+
 /** Throws an actionable error instead of letting the bridge fail obscurely. */
-export async function requirePermission(what: 'sms-read' | 'sms-send'): Promise<void> {
+export async function requirePermission(what: AgentPermissionKey): Promise<void> {
   if (Platform.OS !== 'android') return;
 
   const { permission, label } = SPEC[what];
@@ -32,3 +45,4 @@ export async function requirePermission(what: 'sms-read' | 'sms-send'): Promise<
   }
   granted.add(permission);
 }
+

@@ -116,6 +116,9 @@ export async function cancelTranslation(requestId?: string): Promise<void> {
   }
 }
 
+import { getInferenceTarget } from '../desktop/connectionStore';
+import { translateRemote } from '../desktop/remoteClient';
+
 /** Streams a translation. `onDelta` receives the growing text so the caller can
  * render tokens as they decode. Resolves with the final text. */
 export async function translateText(
@@ -123,6 +126,12 @@ export async function translateText(
   onDelta: (partial: string) => void,
   signal: TranslateSignal = { cancelled: false }
 ): Promise<string> {
+  if (getInferenceTarget() === 'computer') {
+    const translated = await translateRemote(input.text, input.from, input.to, signal);
+    onDelta(translated);
+    return translated;
+  }
+
   const warm = await ensureModel();
   if (signal.cancelled) return '';
 

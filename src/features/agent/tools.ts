@@ -4,7 +4,7 @@ import { findContact } from './contacts';
 import { pinForUssd } from './pin';
 import { requirePermission } from './permissions';
 import { latestFrom, latestMessages, sendSms, summarise } from './sms';
-import { replyToSession, startSession } from './ussd';
+import { cancelUssdSession, directDial, replyToSession, startSession } from './ussd';
 
 /** Tools the agent can run on the phone.
 
@@ -38,10 +38,21 @@ export function normaliseNumber(raw: string): string {
 export const TOOLS: ToolSpec[] = [
   {
     name: 'call',
-    description: 'Open the dialer and call a phone number.',
+    description: 'Call a phone number directly, or open the dialer.',
     args: 'number',
     run: async (args) => {
       const number = normaliseNumber(args.number ?? '');
+      if (Platform.OS === 'android') {
+        try {
+          await requirePermission('call-phone');
+          await directDial(number);
+          return `Dialling ${number}.`;
+        } catch {
+          // If direct call fails or permission is denied, fall back to opening the dialer
+          await Linking.openURL(`tel:${number}`);
+          return `Opened dialer for ${number}.`;
+        }
+      }
       await Linking.openURL(`tel:${number}`);
       return `Dialling ${number}.`;
     },
@@ -124,6 +135,12 @@ export const TOOLS: ToolSpec[] = [
     },
   },
   {
+    name: 'ussd_cancel',
+    description: 'Cancel and close the currently open USSD session.',
+    args: 'none',
+    run: async () => cancelUssdSession(),
+  },
+  {
     name: 'pin_send',
     description: 'Send the saved PIN into the open USSD menu.',
     args: 'none',
@@ -174,12 +191,12 @@ export function toolManifest(): string {
  */
 export function extractContactAndMessage(raw: string): { name: string; message: string } | null {
   const trimmed = raw.trim();
-  const m = /^(?:(text|message|sms|send an sms|text my)\b[\s:]*)?(.+)$/.exec(trimmed);
+  const m = /^(?:(text|message|sms|send an sms|send sms|text my|send a message to|send message to|send an sms to)\b[\s:]*)?(.+)$/i.exec(trimmed);
   if (!m) return null;
   const rest = m[2]?.trim() ?? '';
   if (!rest) return null;
-  // Split on the first sentence-ending clause: "that I am late", "because ...".
-  const [name, ...restParts] = rest.split(/\b(?:that|because|and|then)\b/i);
+  // Split on the first clause boundary: "that ...", "saying ...", "because ...", etc.
+  const [name, ...restParts] = rest.split(/\b(?:that|because|and|then|saying|to say)\b/i);
   const message = restParts.join(' ').trim();
   return { name: name.trim(), message: message };
 }
@@ -188,12 +205,13 @@ export function extractContactAndMessage(raw: string): { name: string; message: 
  * formatting they saw in the prompt ("0722 000 000", "+254 (722) 000-000"), and
  * spaces or brackets break the `tel:` URI on Android. */
 export function extractContactNumber(raw: string): string | null {
-  const trimmed = raw.trim().replace(/[^\d+*#]/g, '');
-  if (!trimmed) return null;
-  return trimmed;
+  const digitsOnly = raw.trim().replace(/[^\d+*#]/g, '');
+  if (!digitsOnly || digitsOnly.length < 3) return null;
+  return digitsOnly;
 }
 
 /** Current date/time. Returns a fixed ISO string plus a short "now" summary. */
 export function clock(): string {
   return new Date().toISOString();
 }
+

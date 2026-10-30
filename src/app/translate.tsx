@@ -19,6 +19,9 @@ import {
   type TranslationLanguage,
 } from '../features/translate/translationService';
 
+import { getInferenceTarget, subscribeConnection } from '../features/desktop/connectionStore';
+import { getRemoteHostDisplayName, isUseComputerActive } from '../features/desktop/inferenceRouter';
+
 const LANGS: { code: TranslationLanguage; label: string }[] = [
   { code: 'en', label: 'English' },
   { code: 'sw', label: 'Swahili' },
@@ -34,10 +37,18 @@ export default function Translate() {
   const [error, setError] = useState<string | null>(null);
   const [from, setFrom] = useState<TranslationLanguage>('en');
   const [copied, setCopied] = useState(false);
+  const [isComputer, setIsComputer] = useState(isUseComputerActive());
+  const [remoteHost, setRemoteHost] = useState(getRemoteHostDisplayName());
   const keyboard = useKeyboardHeight();
   const session = useRef({ cancelled: false });
 
   useEffect(() => subscribe(setStatus), []);
+  useEffect(() => {
+    return subscribeConnection(() => {
+      setIsComputer(isUseComputerActive());
+      setRemoteHost(getRemoteHostDisplayName());
+    });
+  }, []);
 
   // Start in the direction the user chose in Profile; a hand-off from Camera or
   // Voice overrides it below.
@@ -67,7 +78,7 @@ export default function Translate() {
 
   const run = async () => {
     const text = source.trim();
-    if (!text || !model || busy) return;
+    if (!text || (!model && !isComputer) || busy) return;
 
     setBusy(true);
     setError(null);
@@ -89,7 +100,7 @@ export default function Translate() {
         // Camera scans are their own input type so History can icon them apart
         // from typed text and speech.
         params.from === 'camera' ? 'camera' : 'text',
-        model.id
+        model?.id ?? 'remote'
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Translation failed.');
@@ -125,8 +136,15 @@ export default function Translate() {
         <CircleButton onPress={() => router.back()} accessibilityLabel="Back">
           <Ionicons name="chevron-back" size={20} color={colors.text} />
         </CircleButton>
-        <Text style={styles.title}>Translate AI</Text>
-        <CircleButton onPress={() => router.push('/settings/models')} accessibilityLabel="Settings">
+        <View style={{ alignItems: 'center', flex: 1 }}>
+          <Text style={styles.title}>Translate AI</Text>
+          {isComputer ? (
+            <Text style={{ ...type.label, fontSize: 10, color: colors.greenInk }}>
+              Connected computer · {remoteHost ?? 'Laptop'}
+            </Text>
+          ) : null}
+        </View>
+        <CircleButton onPress={() => router.push(isComputer ? '/settings/connect' : '/settings/models')} accessibilityLabel="Settings">
           <Ionicons name="ellipsis-horizontal" size={18} color={colors.text} />
         </CircleButton>
       </View>
@@ -184,7 +202,7 @@ export default function Translate() {
           <CircleButton
             size={44}
             tone="solid"
-            disabled={!busy && (!source.trim() || !model)}
+            disabled={!busy && (!source.trim() || (!model && !isComputer))}
             onPress={busy ? stop : run}
             accessibilityLabel={busy ? 'Stop' : 'Translate'}>
             <Ionicons name={busy ? 'stop' : 'paper-plane-outline'} size={18} color="#FFFFFF" />

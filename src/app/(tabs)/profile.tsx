@@ -17,6 +17,15 @@ import {
   setOfflineMode,
   type Direction,
 } from '../../core/db/settings';
+import {
+  getConnection,
+  getConnectionState,
+  getInferenceTarget,
+  initializeConnection,
+  subscribeConnection,
+  type ComputerConnection,
+  type ConnectionState,
+} from '../../features/desktop/connectionStore';
 
 export default function Profile() {
   const router = useRouter();
@@ -27,6 +36,9 @@ export default function Profile() {
   const [cleared, setCleared] = useState(false);
   const [hasSaved, setHasSaved] = useState<boolean | null>(null);
   const [pinDraft, setPinDraft] = useState('');
+  const [desktopConn, setDesktopConn] = useState<ComputerConnection | null>(getConnection());
+  const [desktopState, setDesktopState] = useState<ConnectionState>(getConnectionState());
+  const [desktopTarget, setDesktopTarget] = useState<'phone' | 'computer'>(getInferenceTarget());
 
   useEffect(() => subscribe(setStatus), []);
   useEffect(() => {
@@ -34,6 +46,12 @@ export default function Profile() {
     void getOfflineMode().then(setOffline);
     void listHistory({ limit: 1000 }).then((rows) => setSaved(rows.length));
     void hasPin().then(setHasSaved);
+    void initializeConnection();
+    return subscribeConnection(() => {
+      setDesktopConn(getConnection());
+      setDesktopState(getConnectionState());
+      setDesktopTarget(getInferenceTarget());
+    });
   }, []);
 
   const savePin = async () => {
@@ -202,6 +220,19 @@ export default function Profile() {
       </View>
 
       <Text style={styles.section}>Manage</Text>
+
+      <SettingRow
+        icon="laptop-outline"
+        title="Connect to a computer"
+        caption={
+          desktopState === 'connected' && desktopConn
+            ? `Connected: ${desktopConn.displayName} · ${desktopTarget === 'computer' ? 'Using computer' : 'Using this phone'}`
+            : desktopConn
+              ? `${desktopConn.displayName} · ${desktopState === 'reconnecting' ? 'Reconnecting…' : 'Paused'}`
+              : 'Pair with Ndimi Desktop for local network inference'
+        }
+        onPress={() => router.push('/settings/connect')}
+      />
 
       <SettingRow
         icon="cube-outline"

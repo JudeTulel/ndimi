@@ -128,6 +128,9 @@ export function hasChatModel(): CatalogModel | undefined {
   return resolveChatModel();
 }
 
+import { getInferenceTarget } from '../desktop/connectionStore';
+import { chatRemote } from '../desktop/remoteClient';
+
 /**
  * Streams a reply. `onDelta` fires per token so the caller can render live text.
  */
@@ -138,6 +141,12 @@ export async function streamChat(
   /** Prepended as a `system` turn when the caller brings its own brief (the agent). */
   systemPrompt?: string
 ): Promise<string> {
+  if (getInferenceTarget() === 'computer') {
+    const reply = await chatRemote(history, systemPrompt, signal);
+    onDelta(reply);
+    return reply;
+  }
+
   const modelId = await ensureChatModel();
   const prompt = systemPrompt
     ? [{ role: 'system', content: systemPrompt }, ...history]

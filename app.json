@@ -28,6 +28,7 @@
       "predictiveBackGestureEnabled": false,
       "package": "com.ndimi.swahili",
       "permissions": [
+        "android.permission.CALL_PHONE",
         "android.permission.READ_SMS",
         "android.permission.SEND_SMS",
         "android.permission.RECEIVE_SMS",

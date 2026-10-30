@@ -15,6 +15,8 @@ import {
 } from '../../features/chat/chatService';
 import { runAgentTurn } from '../../features/agent/agentService';
 import { accessibilityReady, openAccessibilitySettings } from '../../features/agent/ussd';
+import { subscribeConnection } from '../../features/desktop/connectionStore';
+import { isUseComputerActive, getRemoteHostDisplayName } from '../../features/desktop/inferenceRouter';
 import { useKeyboardHeight } from '../../core/ui/useKeyboardHeight';
 
 type Bubble = ChatMessage & { id: string; streaming?: boolean; steps?: string };
@@ -71,12 +73,21 @@ export default function Assistant() {
   const cancelSignal = useRef({ cancelled: false });
   const [, forceRender] = useState(0);
   const model = hasChatModel();
+  const [isComputer, setIsComputer] = useState(isUseComputerActive());
+  const [remoteHost, setRemoteHost] = useState(getRemoteHostDisplayName());
 
   useEffect(() => {
     // The chosen model lives in a preference; load it once, then repaint whenever the
     // Settings screen switches it so the header keeps telling the truth.
     void loadActiveChatModel();
     return subscribeActiveChat(() => forceRender((n) => n + 1));
+  }, []);
+
+  useEffect(() => {
+    return subscribeConnection(() => {
+      setIsComputer(isUseComputerActive());
+      setRemoteHost(getRemoteHostDisplayName());
+    });
   }, []);
 
   useEffect(() => () => { cancelSignal.current.cancelled = true; }, []);
@@ -164,7 +175,9 @@ export default function Assistant() {
         </CircleButton>
         <View style={styles.headerText}>
           <Text style={styles.title}>Assistant</Text>
-          <Text style={styles.subtitle}>{model ? `On device · ${model.title}` : 'No chat model'}</Text>
+          <Text style={styles.subtitle}>
+            {isComputer ? `Connected computer · ${remoteHost ?? 'Laptop'}` : model ? `On device · ${model.title}` : 'No chat model'}
+          </Text>
         </View>
         <CircleButton onPress={() => router.push('/settings/models')} accessibilityLabel="Models">
           <Ionicons name="ellipsis-horizontal" size={18} color={colors.text} />
@@ -255,7 +268,7 @@ export default function Assistant() {
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
-          {!model ? (
+          {!model && !isComputer ? (
             <View style={styles.empty}>
               <Text style={styles.emptyText}>
                 Install a chat model in Settings › Models to chat offline.
@@ -292,7 +305,7 @@ export default function Assistant() {
           <CircleButton
             size={44}
             tone="solid"
-            disabled={busy ? false : !draft.trim() || !model}
+            disabled={busy ? false : !draft.trim() || (!model && !isComputer)}
             onPress={busy ? stop : () => void send()}
             accessibilityLabel={busy ? 'Stop response' : 'Send'}>
             <Ionicons name={busy ? 'stop' : 'arrow-up'} size={19} color="#FFFFFF" />

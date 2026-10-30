@@ -25,6 +25,7 @@ Rules:
 - "say" is what the phone tells the user. Keep it under 12 words.
 - Keep USSD codes exactly as given.
 - A USSD menu comes back as text. Read it, then answer with ussd_reply.
+- If the user wants to stop, exit or cancel a USSD session, call ussd_cancel.
 - When a menu asks for the PIN, call pin_send. The user enters the PIN themselves in
   Settings, so never ask them for the digits in chat.
 
@@ -37,6 +38,9 @@ User: text mum that I am late
 
 User: check my airtime
 {"say":"Opening the airtime menu.","calls":[{"tool":"ussd_start","args":{"code":"*334#"}}]}
+
+User: cancel ussd
+{"say":"Cancelling USSD.","calls":[{"tool":"ussd_cancel","args":{}}]}
 `;
 
 /**
@@ -82,8 +86,32 @@ function findBalancedEnd(reply: string, start: number): number {
   return -1;
 }
 
-/** Parses a model reply into a plan.
+/**
+ * Parses JSON tolerantly, repairing single quotes, trailing commas, or unquoted keys
+ * common in 0.5B–3B model outputs.
+ */
+function tryParseJson(text: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (parsed && typeof parsed === 'object') return parsed as Record<string, unknown>;
+  } catch {
+    // Attempt relaxed cleanup
+    try {
+      const relaxed = text
+        .replace(/,\s*([}\]])/g, '$1')
+        .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?\s*:/g, '"$2":')
+        .replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, '"$1"');
+      const parsed = JSON.parse(relaxed) as unknown;
+      if (parsed && typeof parsed === 'object') return parsed as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
 
+/** Parses a model reply into a plan.
+ *
  * Multi-object replies (concatenated JSON fragments without prose) are collected
  * independently; an object is valid only if it parses as JSON with at least one
  * real tool call. Prefers a parsed object containing valid tool calls over the
@@ -95,41 +123,33 @@ export function parsePlan(reply: string): AgentPlan {
   // Walk the objects in order: the first one that parses as JSON with a valid
   // tool call is used. Markdown fences and stray prose are skipped.
   for (const candidate of candidates) {
-    try {
-      const raw = JSON.parse(candidate) as {
-        say?: unknown;
-        calls?: unknown;
-        tool?: unknown;
-        args?: unknown;
-      };
+    const raw = tryParseJson(candidate);
+    if (!raw) continue;
 
-      // Single-call shorthand `{"tool":…,"args":…}` is accepted.
-      const calls = Array.isArray(raw.calls)
-        ? raw.calls
-        : raw.tool
-          ? [{ tool: raw.tool, args: raw.args }]
-          : [];
+    // Single-call shorthand `{"tool":…,"args":…}` is accepted.
+    const calls = Array.isArray(raw.calls)
+      ? raw.calls
+      : raw.tool
+        ? [{ tool: raw.tool, args: raw.args }]
+        : [];
 
-      const validCalls = calls.flatMap((entry) => {
-        if (!entry || typeof entry !== 'object') return [];
-        const { tool, args } = entry as { tool?: unknown; args?: unknown };
-        if (typeof tool !== 'string' || !findTool(tool)) return [];
-        const clean: Record<string, string> = {};
-        if (args && typeof args === 'object') {
-          for (const [key, value] of Object.entries(args as Record<string, unknown>)) {
-            if (value !== null && value !== undefined) clean[key] = String(value);
-          }
+    const validCalls = calls.flatMap((entry) => {
+      if (!entry || typeof entry !== 'object') return [];
+      const { tool, args } = entry as { tool?: unknown; args?: unknown };
+      if (typeof tool !== 'string' || !findTool(tool)) return [];
+      const clean: Record<string, string> = {};
+      if (args && typeof args === 'object') {
+        for (const [key, value] of Object.entries(args as Record<string, unknown>)) {
+          if (value !== null && value !== undefined) clean[key] = String(value);
         }
-        return [{ tool, args: clean }];
-      });
+      }
+      return [{ tool, args: clean }];
+    });
 
-      return {
-        say: typeof raw.say === 'string' ? raw.say : '',
-        calls: validCalls,
-      };
-    } catch {
-      continue;
-    }
+    return {
+      say: typeof raw.say === 'string' ? raw.say : '',
+      calls: validCalls,
+    };
   }
 
   // No JSON object parsed to a valid plan. Prefer returning the whole reply as

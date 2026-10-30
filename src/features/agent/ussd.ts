@@ -1,7 +1,14 @@
-import { isAccessibilityEnabled, multisessionUssd, openAccessibilitySettings, sendMessage } from 'react-native-ussd-advanced';
+import {
+  cancelSession,
+  isAccessibilityEnabled,
+  multisessionUssd,
+  openAccessibilitySettings,
+  sendMessage,
+  sendUssd,
+} from 'react-native-ussd-advanced';
 
 /** USSD session wrapper.
-
+ *
  * `react-native-ussd-advanced` drives the dialer through an accessibility service:
  * it types the code, waits for the reply and returns the menu text, then types our
  * answers back. That is the only way to read a menu — `tel:` links show the menu but
@@ -37,16 +44,45 @@ function clean(reply: string | null): UssdResult {
 /** Starts a session and returns the first menu. */
 export async function startSession(code: string): Promise<UssdResult> {
   await ensureAccessibility();
-  const reply = await multisessionUssd(code);
-  open = true;
-  return clean(reply);
+  try {
+    const reply = await multisessionUssd(code);
+    open = true;
+    return clean(reply);
+  } catch (error) {
+    open = false;
+    throw error;
+  }
 }
 
 /** Answers the current menu. */
 export async function replyToSession(input: string): Promise<UssdResult> {
   if (!open) throw new Error('No USSD session is open. Start one with a code first.');
-  const reply = await sendMessage(input);
-  return clean(reply);
+  try {
+    const reply = await sendMessage(input);
+    return clean(reply);
+  } catch (error) {
+    open = false;
+    throw error;
+  }
+}
+
+/** Cancels any open USSD session and resets the session tracker. */
+export async function cancelUssdSession(): Promise<string> {
+  open = false;
+  try {
+    await cancelSession();
+  } catch {
+    // Native session might have already closed or timed out
+  }
+  return 'USSD session ended.';
+}
+
+/**
+ * Direct phone dialer using Android ACTION_CALL via telephony bridge.
+ * Directly places the call without stopping at the dialer screen (clicks call button).
+ */
+export async function directDial(number: string): Promise<boolean> {
+  return sendUssd(number);
 }
 
 /** Whether the accessibility service is on; `null` before it has been checked. */
@@ -60,3 +96,4 @@ export function ussdSessionOpen(): boolean {
 }
 
 export { openAccessibilitySettings };
+
